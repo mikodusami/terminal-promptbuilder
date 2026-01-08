@@ -1,0 +1,54 @@
+PROMPT BUILDER
+==============
+
+A CLI tool for creating exceptional prompts using modern prompt engineering techniques.
+
+
+TECHNIQUES
+----------
+
+- Chain of Thought (CoT)     Step-by-step reasoning
+- Few-Shot Learning          Learn from examples
+- Role-Based                 Expert personas
+- Structured Output          JSON, Markdown, etc.
+- ReAct                      Reasoning + Acting
+- Tree of Thoughts           Multiple solution paths
+- Self-Consistency           Verification via consensus
+
+
+INSTALLATION
+------------
+
+1. Create and activate a virtual environment:
+
+   python -m venv .venv
+   source .venv/bin/activate
+
+2. Install dependencies:
+
+   pip install rich
+
+3. Run the tool:
+
+   python prompt_builder.py
+
+
+PROGRAMMATIC USAGE
+------------------
+
+from prompt_builder import quick_build
+
+prompt = quick_build("cot", task="Explain quantum computing")
+
+prompt = quick_build("role", task="Review this code", role="security engineer")
+
+prompt = quick_build("few_shot", task="Classify sentiment", examples=[
+    {"input": "Great product!", "output": "positive"},
+    {"input": "Waste of money", "output": "negative"}
+])
+
+
+LICENSE
+-------
+
+MIT
