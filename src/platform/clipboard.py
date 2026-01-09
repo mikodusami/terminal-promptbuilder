@@ -1,5 +1,5 @@
 """
-Clipboard utilities for copying prompts.
+Clipboard utilities for cross-platform clipboard access.
 """
 
 import subprocess
@@ -14,10 +14,10 @@ except ImportError:
 
 def copy_to_clipboard(text: str) -> bool:
     """
-    Copy text to clipboard. Tries pyperclip first, falls back to OS-specific methods.
+    Copy text to clipboard.
+    Tries pyperclip first, falls back to OS-specific methods.
     Returns True if successful.
     """
-    # Try pyperclip first
     if PYPERCLIP_AVAILABLE:
         try:
             pyperclip.copy(text)
@@ -25,7 +25,6 @@ def copy_to_clipboard(text: str) -> bool:
         except Exception:
             pass
     
-    # Fallback to OS-specific methods
     system = platform.system()
     
     try:
@@ -39,14 +38,9 @@ def copy_to_clipboard(text: str) -> bool:
             return process.returncode == 0
         
         elif system == "Linux":
-            # Try xclip first, then xsel
             for cmd in [["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]:
                 try:
-                    process = subprocess.Popen(
-                        cmd,
-                        stdin=subprocess.PIPE,
-                        close_fds=True
-                    )
+                    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, close_fds=True)
                     process.communicate(input=text.encode("utf-8"))
                     if process.returncode == 0:
                         return True
@@ -55,11 +49,7 @@ def copy_to_clipboard(text: str) -> bool:
             return False
         
         elif system == "Windows":
-            process = subprocess.Popen(
-                ["clip"],
-                stdin=subprocess.PIPE,
-                close_fds=True
-            )
+            process = subprocess.Popen(["clip"], stdin=subprocess.PIPE, close_fds=True)
             process.communicate(input=text.encode("utf-16"))
             return process.returncode == 0
         
@@ -77,8 +67,7 @@ def is_clipboard_available() -> bool:
     system = platform.system()
     
     if system == "Darwin":
-        return True  # pbcopy is always available on macOS
-    
+        return True
     elif system == "Linux":
         for cmd in ["xclip", "xsel"]:
             try:
@@ -87,8 +76,7 @@ def is_clipboard_available() -> bool:
             except FileNotFoundError:
                 continue
         return False
-    
     elif system == "Windows":
-        return True  # clip is always available on Windows
+        return True
     
     return False

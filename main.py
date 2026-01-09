@@ -30,20 +30,29 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
 
-from prompt_history import PromptHistory, SavedPrompt
-from template_manager import TemplateManager, CustomTemplate, YAML_AVAILABLE
-from clipboard_utils import copy_to_clipboard, is_clipboard_available
-from token_counter import TokenCounter, is_tiktoken_available
-from export_formats import PromptExporter, PromptMetadata, EXPORT_FORMATS, export_prompt
-from api_config import APIConfig
-from llm_client import LLMClient
-from prompt_optimizer import PromptOptimizer
-from prompt_testing import PromptTestSuite, TestCase
-from prompt_chains import ChainExecutor, ChainStep, PromptChain, BUILTIN_CHAINS
-from prompt_sharing import PromptSharing, SharedPrompt
-from context_manager import ContextManager
-from analytics import PromptAnalytics
-from natural_language_gen import NaturalLanguageGenerator
+from src.contrib.history.service import HistoryService as PromptHistory
+from src.contrib.history.common import SavedPrompt
+from src.contrib.templates.service import TemplateService as TemplateManager
+from src.contrib.templates.common import CustomTemplate, YAML_AVAILABLE
+from src.platform.clipboard import copy_to_clipboard, is_clipboard_available
+from src.services.token_counter import TokenCounter, is_tiktoken_available
+from src.services.export import ExportService as PromptExporter, ExportMetadata as PromptMetadata, FORMAT_INFO as EXPORT_FORMATS, export_prompt
+from src.services.llm.config import LLMConfig as APIConfig
+from src.services.llm.client import LLMClient
+from src.contrib.optimizer.service import OptimizerService as PromptOptimizer
+from src.contrib.optimizer.common import OptimizationResult
+from src.contrib.testing.service import TestingService as PromptTestSuite
+from src.contrib.testing.common import TestCase, TestResult
+from src.contrib.chains.service import ChainService as ChainExecutor
+from src.contrib.chains.common import ChainStep, PromptChain, ChainResult
+from src.contrib.chains.builtin import BUILTIN_CHAINS
+from src.contrib.sharing.service import SharingService as PromptSharing
+from src.contrib.sharing.common import SharedPrompt, PromptLibrary
+from src.services.context import ContextManager
+from src.contrib.analytics.service import PromptAnalytics
+from src.contrib.nlgen.service import NaturalLanguageGenerator
+from src.contrib.variables.service import VariableInterpolator
+from src.contrib.plugins.service import PluginManager
 
 console = Console() if RICH_AVAILABLE else None
 

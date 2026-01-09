@@ -5,7 +5,6 @@ Feature #9: Natural Language Prompt Generation
 
 from dataclasses import dataclass
 from typing import Optional
-from llm_client import LLMClient
 
 
 @dataclass
@@ -49,8 +48,8 @@ Generate prompts that are:
 class NaturalLanguageGenerator:
     """Generate prompts from natural language descriptions."""
 
-    def __init__(self, llm_client: LLMClient = None):
-        self.client = llm_client or LLMClient()
+    def __init__(self, llm_client=None):
+        self.client = llm_client
 
     async def generate(
         self,

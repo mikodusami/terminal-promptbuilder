@@ -1,32 +1,13 @@
 """
-AI-Powered Prompt Optimizer - Analyze and improve prompts using LLMs.
-Feature #1: AI-Powered Prompt Optimizer
+Optimizer feature - AI-powered prompt optimization service.
 """
 
-from dataclasses import dataclass
-from typing import Optional
-from llm_client import LLMClient, LLMResponse
+import json
+from ...services.llm import LLMClient
+from .common import OptimizationResult
 
 
-@dataclass
-class OptimizationResult:
-    original_prompt: str
-    optimized_prompt: str
-    suggestions: list[str]
-    clarity_score: int  # 1-10
-    specificity_score: int  # 1-10
-    effectiveness_score: int  # 1-10
-    explanation: str
-    error: Optional[str] = None
-
-
-OPTIMIZER_SYSTEM_PROMPT = """You are an expert prompt engineer. Your task is to analyze and optimize prompts for LLM interactions.
-
-When given a prompt, you will:
-1. Analyze its clarity, specificity, and potential effectiveness
-2. Identify areas for improvement
-3. Provide an optimized version
-4. Give specific suggestions
+OPTIMIZER_SYSTEM_PROMPT = """You are an expert prompt engineer. Analyze and optimize prompts for LLM interactions.
 
 Respond in this exact JSON format:
 {
@@ -35,13 +16,13 @@ Respond in this exact JSON format:
     "clarity_score": 7,
     "specificity_score": 8,
     "effectiveness_score": 7,
-    "explanation": "Brief explanation of changes made and why"
+    "explanation": "Brief explanation of changes made"
 }
 
-Scores are 1-10 where 10 is best. Be constructive and specific in suggestions."""
+Scores are 1-10 where 10 is best."""
 
 
-class PromptOptimizer:
+class OptimizerService:
     """Analyze and optimize prompts using AI."""
 
     def __init__(self, llm_client: LLMClient = None):
@@ -58,7 +39,7 @@ class PromptOptimizer:
         
         user_prompt = f"Analyze and optimize this prompt:\n\n{prompt}"
         if context:
-            user_prompt += f"\n\nContext for the prompt: {context}"
+            user_prompt += f"\n\nContext: {context}"
 
         response = await self.client.complete(
             prompt=user_prompt,
@@ -80,10 +61,7 @@ class PromptOptimizer:
                 error=response.error
             )
 
-        # Parse response
         try:
-            import json
-            # Try to extract JSON from response
             content = response.content
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
@@ -102,48 +80,13 @@ class PromptOptimizer:
                 explanation=data.get("explanation", "")
             )
         except Exception as e:
-            # If parsing fails, return the raw response as explanation
             return OptimizationResult(
                 original_prompt=prompt,
                 optimized_prompt=prompt,
-                suggestions=["Could not parse optimization suggestions"],
+                suggestions=[],
                 clarity_score=5,
                 specificity_score=5,
                 effectiveness_score=5,
                 explanation=response.content,
                 error=f"Parse error: {str(e)}"
             )
-
-    async def quick_suggestions(
-        self,
-        prompt: str,
-        provider: str = None,
-        model: str = None
-    ) -> list[str]:
-        """Get quick improvement suggestions without full optimization."""
-        
-        response = await self.client.complete(
-            prompt=f"Give 3 brief suggestions to improve this prompt (one line each):\n\n{prompt}",
-            provider=provider,
-            model=model,
-            system_prompt="You are a prompt engineering expert. Give concise, actionable suggestions.",
-            max_tokens=500,
-            temperature=0.3
-        )
-
-        if response.error:
-            return [f"Error: {response.error}"]
-
-        # Parse suggestions
-        lines = [line.strip() for line in response.content.split("\n") if line.strip()]
-        suggestions = []
-        for line in lines:
-            # Remove numbering
-            if line[0].isdigit() and (line[1] == '.' or line[1] == ')'):
-                line = line[2:].strip()
-            if line.startswith('-'):
-                line = line[1:].strip()
-            if line:
-                suggestions.append(line)
-        
-        return suggestions[:5]  # Max 5 suggestions

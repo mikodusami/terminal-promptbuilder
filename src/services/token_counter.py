@@ -1,5 +1,5 @@
 """
-Token Counter & Cost Estimator for prompts.
+Token counting and cost estimation service.
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,7 @@ class TokenEstimate:
     token_count: int
     model: str
     input_cost: float
-    output_cost_1k: float  # Cost per 1K output tokens (estimated)
+    output_cost_1k: float
     
     @property
     def formatted_cost(self) -> str:
@@ -26,7 +26,7 @@ class TokenEstimate:
         return f"${self.input_cost:.3f}"
 
 
-# Pricing per 1K tokens (as of late 2024 - update as needed)
+# Pricing per 1K tokens
 MODEL_PRICING = {
     "gpt-4o": {"input": 0.0025, "output": 0.01, "encoding": "o200k_base"},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006, "encoding": "o200k_base"},
@@ -63,7 +63,6 @@ class TokenCounter:
     def count_tokens(self, text: str, model: str = "gpt-4o") -> int:
         """Count tokens for a given text and model."""
         if not TIKTOKEN_AVAILABLE:
-            # Fallback: rough estimate of ~4 chars per token
             return len(text) // 4
         
         pricing = MODEL_PRICING.get(model, MODEL_PRICING["gpt-4o"])
@@ -71,8 +70,6 @@ class TokenCounter:
         
         if encoder:
             return len(encoder.encode(text))
-        
-        # Fallback
         return len(text) // 4
 
     def estimate_cost(self, text: str, model: str = "gpt-4o") -> TokenEstimate:
@@ -81,34 +78,19 @@ class TokenCounter:
         pricing = MODEL_PRICING.get(model, MODEL_PRICING["gpt-4o"])
         
         input_cost = (token_count / 1000) * pricing["input"]
-        output_cost_1k = pricing["output"]
         
         return TokenEstimate(
             token_count=token_count,
             model=model,
             input_cost=input_cost,
-            output_cost_1k=output_cost_1k
+            output_cost_1k=pricing["output"]
         )
 
     def estimate_all_models(self, text: str, models: list[str] = None) -> list[TokenEstimate]:
         """Estimate costs across multiple models."""
         if models is None:
             models = DEFAULT_MODELS
-        
         return [self.estimate_cost(text, model) for model in models]
-
-    def format_estimates(self, text: str, models: list[str] = None) -> str:
-        """Format token estimates as a readable string."""
-        estimates = self.estimate_all_models(text, models)
-        
-        lines = ["Token & Cost Estimates:", "-" * 40]
-        for est in estimates:
-            lines.append(
-                f"{est.model:<18} {est.token_count:>6} tokens  "
-                f"Input: {est.formatted_cost:<8} Output/1K: ${est.output_cost_1k:.4f}"
-            )
-        
-        return "\n".join(lines)
 
 
 def is_tiktoken_available() -> bool:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 import re
 
-from token_counter import TokenCounter
+from .token_counter import TokenCounter
 
 
 @dataclass
