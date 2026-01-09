@@ -13,6 +13,7 @@ Techniques included:
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -28,6 +29,12 @@ try:
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
+
+from prompt_history import PromptHistory, SavedPrompt
+from template_manager import TemplateManager, CustomTemplate, YAML_AVAILABLE
+from clipboard_utils import copy_to_clipboard, is_clipboard_available
+from token_counter import TokenCounter, is_tiktoken_available
+from export_formats import PromptExporter, PromptMetadata, EXPORT_FORMATS, export_prompt
 
 console = Console() if RICH_AVAILABLE else None
 
@@ -215,28 +222,537 @@ class InteractivePromptBuilder:
 
     def __init__(self):
         self.builder = PromptBuilder()
+        self.history = PromptHistory()
+        self.template_manager = TemplateManager()
+        self.token_counter = TokenCounter()
+        self.preview_mode = False
         if not RICH_AVAILABLE:
-            console_print("[yellow]Install 'rich' for the best experience: pip install rich[/]")
+            print("[yellow]Install 'rich' for the best experience: pip install rich[/]")
 
     def run(self):
         """Run the interactive prompt builder."""
         self._show_header()
 
         while True:
-            prompt_type, color = self._select_prompt_type()
-            if prompt_type is None:
+            action = self._show_main_menu()
+            
+            if action == "quit":
                 self._show_goodbye()
                 break
+            elif action == "new":
+                self._create_new_prompt()
+            elif action == "combine":
+                self._combine_techniques()
+            elif action == "templates":
+                self._use_custom_template()
+            elif action == "history":
+                self._browse_history()
+            elif action == "favorites":
+                self._browse_favorites()
+            elif action == "search":
+                self._search_prompts()
+            elif action == "preview":
+                self._toggle_preview_mode()
 
-            config = self._gather_config(prompt_type, color)
-            result = self.builder.build(prompt_type, config)
+    def _use_custom_template(self):
+        """Use a custom template to create a prompt."""
+        templates = self.template_manager.list_templates()
+        
+        if not templates:
+            if RICH_AVAILABLE:
+                console.print(f"[dim]No custom templates found. Add templates to:[/]")
+                console.print(f"[cyan]{self.template_manager.get_config_path()}[/]\n")
+            else:
+                print(f"No custom templates. Add them to: {self.template_manager.get_config_path()}\n")
+            return
+        
+        # Display templates
+        if RICH_AVAILABLE:
+            console.print("[bold bright_white]Custom Templates:[/]\n")
+            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
+            table.add_column("Key", style="bold bright_white", width=5)
+            table.add_column("Template", width=22)
+            table.add_column("Description", style="dim")
+            
+            template_keys = list(self.template_manager.templates.keys())
+            for i, key in enumerate(template_keys, 1):
+                t = self.template_manager.templates[key]
+                table.add_row(f"[{t.color}]{i}[/]", f"{t.icon} [{t.color}]{t.name}[/]", t.description)
+            table.add_row("[red]b[/]", "🔙 [red]Back[/]", "Return to main menu")
+            console.print(table)
+            console.print()
+            choice = Prompt.ask("[bold]Select template[/]", default="b")
+        else:
+            print("\nCustom Templates:\n")
+            template_keys = list(self.template_manager.templates.keys())
+            for i, key in enumerate(template_keys, 1):
+                t = self.template_manager.templates[key]
+                print(f"  [{i}] {t.icon} {t.name:<20} - {t.description}")
+            print("  [b] 🔙 Back")
+            choice = input("\nSelect template: ").strip()
+        
+        if choice.lower() == 'b':
+            return
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(template_keys):
+                key = template_keys[idx]
+                self._fill_template(key)
+        except ValueError:
+            pass
 
-            self._display_result(result, color)
-            self._offer_save_option(result)
+    def _fill_template(self, template_key: str):
+        """Fill in a template's variables and generate prompt."""
+        template = self.template_manager.get_template(template_key)
+        if not template:
+            return
+        
+        if RICH_AVAILABLE:
+            console.print(Panel(
+                f"[bold]{template.name}[/]\n[dim]{template.description}[/]",
+                border_style=template.color,
+                box=box.ROUNDED
+            ))
+        
+        # Gather variables
+        variables = {}
+        for var in template.variables:
+            if RICH_AVAILABLE:
+                value = Prompt.ask(f"[bold {template.color}]{var}[/]")
+            else:
+                value = input(f"{var}: ").strip()
+            variables[var] = value
+        
+        # Build prompt
+        result = self.template_manager.build_prompt(template_key, variables)
+        
+        self._display_result(result, template.color)
+        
+        # Save to history
+        tags = self._ask_tags()
+        prompt_id = self.history.save(
+            technique=f"template:{template_key}",
+            task=variables.get('task', template.name),
+            prompt=result,
+            tags=tags
+        )
+        
+        if RICH_AVAILABLE:
+            console.print(f"[dim]💾 Auto-saved to history (ID: {prompt_id})[/]")
+        
+        self._prompt_actions(prompt_id, result, template.color)
 
-            if not self._continue_prompt():
-                self._show_goodbye()
+    def _show_main_menu(self) -> str:
+        """Show main menu and return selected action."""
+        if RICH_AVAILABLE:
+            console.print("[bold bright_white]Main Menu:[/]\n")
+            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
+            table.add_column("Key", style="bold bright_white", width=5)
+            table.add_column("Action", width=22)
+            table.add_column("Description", style="dim")
+            table.add_row("[cyan]n[/]", "✨ [cyan]New Prompt[/]", "Create a new prompt")
+            table.add_row("[bright_cyan]m[/]", "🔗 [bright_cyan]Combine[/]", "Chain multiple techniques")
+            table.add_row("[blue]t[/]", "📦 [blue]Templates[/]", "Use custom templates")
+            table.add_row("[green]h[/]", "📜 [green]History[/]", "Browse recent prompts")
+            table.add_row("[yellow]f[/]", "⭐ [yellow]Favorites[/]", "View favorite prompts")
+            table.add_row("[magenta]s[/]", "🔍 [magenta]Search[/]", "Search saved prompts")
+            table.add_row("[white]p[/]", "👁️  [white]Preview Mode[/]", f"{'ON' if self.preview_mode else 'OFF'} - Live prompt preview")
+            table.add_row("[red]q[/]", "🚪 [red]Quit[/]", "Exit the builder")
+            console.print(table)
+            console.print()
+            choice = Prompt.ask("[bold]Your choice[/]", default="n")
+        else:
+            print("\nMain Menu:\n")
+            print("  [n] ✨ New Prompt    - Create a new prompt")
+            print("  [m] 🔗 Combine       - Chain multiple techniques")
+            print("  [t] 📦 Templates     - Use custom templates")
+            print("  [h] 📜 History       - Browse recent prompts")
+            print("  [f] ⭐ Favorites     - View favorite prompts")
+            print("  [s] 🔍 Search        - Search saved prompts")
+            print(f"  [p] 👁️  Preview Mode  - {'ON' if self.preview_mode else 'OFF'} - Live prompt preview")
+            print("  [q] 🚪 Quit          - Exit the builder")
+            choice = input("\nYour choice: ").strip().lower()
+
+        menu_map = {"n": "new", "m": "combine", "t": "templates", "h": "history", "f": "favorites", "s": "search", "p": "preview", "q": "quit"}
+        return menu_map.get(choice.lower(), "new")
+
+    def _create_new_prompt(self):
+        """Create a new prompt flow."""
+        prompt_type, color = self._select_prompt_type()
+        if prompt_type is None:
+            return
+
+        config = self._gather_config(prompt_type, color)
+        result = self.builder.build(prompt_type, config)
+
+        self._display_result(result, color)
+        
+        # Auto-save to history
+        tags = self._ask_tags()
+        prompt_id = self.history.save(
+            technique=prompt_type.value,
+            task=config.task,
+            prompt=result,
+            tags=tags
+        )
+        
+        if RICH_AVAILABLE:
+            console.print(f"[dim]💾 Auto-saved to history (ID: {prompt_id})[/]")
+        
+        # Offer additional actions
+        self._prompt_actions(prompt_id, result, color)
+
+    def _combine_techniques(self):
+        """Combine multiple techniques into a mega-prompt."""
+        if RICH_AVAILABLE:
+            console.print(Panel(
+                "[bold]🔗 Prompt Combiner[/]\n[dim]Chain multiple techniques into one powerful prompt[/]",
+                border_style="bright_cyan",
+                box=box.ROUNDED
+            ))
+            console.print("[dim]Select techniques to combine (enter numbers separated by spaces)[/]\n")
+        else:
+            print("\n🔗 Prompt Combiner")
+            print("Select techniques to combine (enter numbers separated by spaces)\n")
+        
+        # Show technique options
+        if RICH_AVAILABLE:
+            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
+            table.add_column("Key", style="bold bright_white", width=5)
+            table.add_column("Technique", width=22)
+            table.add_column("Adds", style="dim")
+            
+            combo_info = [
+                ("Role-Based", "Expert persona context"),
+                ("Chain of Thought", "Step-by-step reasoning"),
+                ("Few-Shot", "Learning examples"),
+                ("Structured", "Output format requirements"),
+                ("ReAct", "Reasoning + action framework"),
+                ("Tree of Thoughts", "Multi-path exploration"),
+                ("Self-Consistency", "Verification approach"),
+            ]
+            for i, (ptype, name, icon, color, _) in enumerate(self.TECHNIQUES, 1):
+                table.add_row(f"[{color}]{i}[/]", f"{icon} [{color}]{name}[/]", combo_info[i-1][1])
+            console.print(table)
+            console.print()
+            choices = Prompt.ask("[bold]Techniques to combine[/] [dim](e.g., 3 1 4)[/]", default="3 1")
+        else:
+            for i, (_, name, icon, _, _) in enumerate(self.TECHNIQUES, 1):
+                print(f"  [{i}] {icon} {name}")
+            choices = input("\nTechniques to combine (e.g., 3 1 4): ").strip()
+        
+        # Parse selections
+        try:
+            indices = [int(x) - 1 for x in choices.split()]
+            selected = [(self.TECHNIQUES[i][0], self.TECHNIQUES[i][1], self.TECHNIQUES[i][3]) 
+                       for i in indices if 0 <= i < len(self.TECHNIQUES)]
+        except (ValueError, IndexError):
+            if RICH_AVAILABLE:
+                console.print("[red]Invalid selection[/]")
+            return
+        
+        if len(selected) < 2:
+            if RICH_AVAILABLE:
+                console.print("[yellow]Select at least 2 techniques to combine[/]")
+            return
+        
+        # Get the task
+        if RICH_AVAILABLE:
+            selected_names = " + ".join([f"[{c}]{n}[/]" for _, n, c in selected])
+            console.print(f"\n[bold]Combining:[/] {selected_names}\n")
+            task = Prompt.ask("[bold cyan]📝 What is your task/question?[/]")
+            context = Prompt.ask("[bold blue]📖 Context[/] [dim](optional)[/]", default="")
+        else:
+            print(f"\nCombining: {' + '.join([n for _, n, _ in selected])}\n")
+            task = input("📝 What is your task/question?\n> ").strip()
+            context = input("\n📖 Context (optional):\n> ").strip()
+        
+        # Build combined prompt
+        combined_parts = []
+        combined_parts.append("=" * 50)
+        combined_parts.append("COMBINED PROMPT - Multiple Techniques")
+        combined_parts.append("=" * 50)
+        
+        if context:
+            combined_parts.append(f"\nContext: {context}")
+        combined_parts.append(f"\nTask: {task}")
+        combined_parts.append("\n" + "-" * 50)
+        
+        for ptype, name, _ in selected:
+            config = PromptConfig(task=task, context=context)
+            section = self.builder.build(ptype, config)
+            combined_parts.append(f"\n## {name.upper()} APPROACH ##\n")
+            combined_parts.append(section)
+            combined_parts.append("\n" + "-" * 50)
+        
+        combined_parts.append("\nSynthesize insights from all approaches above to provide a comprehensive answer.")
+        
+        result = "\n".join(combined_parts)
+        
+        self._display_result(result, "bright_cyan")
+        
+        # Save to history
+        tags = self._ask_tags()
+        technique_names = "+".join([p.value for p, _, _ in selected])
+        prompt_id = self.history.save(
+            technique=f"combined:{technique_names}",
+            task=task,
+            prompt=result,
+            tags=tags
+        )
+        
+        if RICH_AVAILABLE:
+            console.print(f"[dim]💾 Auto-saved to history (ID: {prompt_id})[/]")
+        
+        self._prompt_actions(prompt_id, result, "bright_cyan")
+
+    def _ask_tags(self) -> list[str]:
+        """Ask for optional tags."""
+        if RICH_AVAILABLE:
+            tags_input = Prompt.ask("\n[bold]🏷️  Tags[/] [dim](comma-separated, Enter to skip)[/]", default="")
+        else:
+            tags_input = input("\n🏷️  Tags (comma-separated, Enter to skip): ").strip()
+        
+        if tags_input:
+            return [t.strip() for t in tags_input.split(",") if t.strip()]
+        return []
+
+    def _prompt_actions(self, prompt_id: int, prompt: str, color: str):
+        """Offer actions after prompt creation."""
+        # Auto-copy to clipboard
+        if is_clipboard_available():
+            if copy_to_clipboard(prompt):
+                if RICH_AVAILABLE:
+                    console.print("[green]📋 Copied to clipboard![/]")
+                else:
+                    print("📋 Copied to clipboard!")
+        
+        while True:
+            if RICH_AVAILABLE:
+                console.print("\n[bold]Actions:[/] [cyan]c[/]=copy [yellow]f[/]=favorite [green]s[/]=save file [dim]Enter[/]=continue")
+                action = Prompt.ask("[bold]Action[/]", default="")
+            else:
+                print("\nActions: [c]=copy [f]=favorite [s]=save file [Enter]=continue")
+                action = input("Action: ").strip().lower()
+
+            if action == "c":
+                if copy_to_clipboard(prompt):
+                    if RICH_AVAILABLE:
+                        console.print("[green]📋 Copied to clipboard![/]")
+                    else:
+                        print("📋 Copied to clipboard!")
+                else:
+                    if RICH_AVAILABLE:
+                        console.print("[red]Could not copy to clipboard[/]")
+            elif action == "f":
+                is_fav = self.history.toggle_favorite(prompt_id)
+                if RICH_AVAILABLE:
+                    status = "[yellow]⭐ Added to favorites[/]" if is_fav else "[dim]Removed from favorites[/]"
+                    console.print(status)
+                else:
+                    print("⭐ Toggled favorite status")
+            elif action == "s":
+                self._save_to_file(prompt)
+            else:
                 break
+
+    def _browse_history(self):
+        """Browse recent prompts."""
+        prompts = self.history.list_recent(15)
+        if not prompts:
+            if RICH_AVAILABLE:
+                console.print("[dim]No prompts in history yet.[/]\n")
+            else:
+                print("No prompts in history yet.\n")
+            return
+        
+        self._display_prompt_list(prompts, "📜 Recent Prompts")
+        self._select_from_list(prompts)
+
+    def _browse_favorites(self):
+        """Browse favorite prompts."""
+        prompts = self.history.list_favorites()
+        if not prompts:
+            if RICH_AVAILABLE:
+                console.print("[dim]No favorites yet. Create prompts and mark them as favorites![/]\n")
+            else:
+                print("No favorites yet.\n")
+            return
+        
+        self._display_prompt_list(prompts, "⭐ Favorite Prompts")
+        self._select_from_list(prompts)
+
+    def _search_prompts(self):
+        """Search saved prompts."""
+        if RICH_AVAILABLE:
+            query = Prompt.ask("[bold magenta]🔍 Search[/]")
+        else:
+            query = input("🔍 Search: ").strip()
+        
+        prompts = self.history.search(query)
+        if not prompts:
+            if RICH_AVAILABLE:
+                console.print(f"[dim]No prompts found for '{query}'[/]\n")
+            else:
+                print(f"No prompts found for '{query}'\n")
+            return
+        
+        self._display_prompt_list(prompts, f"🔍 Results for '{query}'")
+        self._select_from_list(prompts)
+
+    def _display_prompt_list(self, prompts: list[SavedPrompt], title: str):
+        """Display a list of prompts."""
+        if RICH_AVAILABLE:
+            table = Table(title=title, box=box.ROUNDED, border_style="dim")
+            table.add_column("#", style="bold", width=4)
+            table.add_column("Technique", width=12)
+            table.add_column("Task", width=35)
+            table.add_column("Tags", style="dim", width=15)
+            table.add_column("⭐", width=3)
+            
+            for i, p in enumerate(prompts, 1):
+                fav = "⭐" if p.is_favorite else ""
+                task_preview = p.task[:32] + "..." if len(p.task) > 35 else p.task
+                tags = ", ".join(p.tags[:3]) if p.tags else ""
+                table.add_row(str(i), p.technique, task_preview, tags, fav)
+            
+            console.print(table)
+        else:
+            print(f"\n{title}\n" + "-" * 50)
+            for i, p in enumerate(prompts, 1):
+                fav = "⭐" if p.is_favorite else "  "
+                task_preview = p.task[:40] + "..." if len(p.task) > 40 else p.task
+                print(f"{i}. {fav} [{p.technique}] {task_preview}")
+
+    def _select_from_list(self, prompts: list[SavedPrompt]):
+        """Let user select a prompt from the list."""
+        if RICH_AVAILABLE:
+            choice = Prompt.ask("\n[bold]Select #[/] [dim](or Enter to go back)[/]", default="")
+        else:
+            choice = input("\nSelect # (or Enter to go back): ").strip()
+        
+        if not choice:
+            return
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(prompts):
+                self._view_prompt(prompts[idx])
+        except ValueError:
+            pass
+
+    def _view_prompt(self, saved: SavedPrompt):
+        """View a saved prompt with actions."""
+        color = "cyan"
+        for ptype, _, _, c, _ in self.TECHNIQUES:
+            if ptype.value == saved.technique:
+                color = c
+                break
+        
+        if RICH_AVAILABLE:
+            console.print(Panel(
+                saved.prompt,
+                title=f"[bold]{saved.technique.upper()}[/] - {saved.task[:40]}",
+                subtitle=f"[dim]ID: {saved.id} | Created: {saved.created_at.strftime('%Y-%m-%d %H:%M')}[/]",
+                border_style=color,
+                box=box.DOUBLE,
+                padding=(1, 2)
+            ))
+        else:
+            print(f"\n{'=' * 50}")
+            print(f"[{saved.technique}] {saved.task}")
+            print(f"{'=' * 50}")
+            print(saved.prompt)
+            print(f"{'=' * 50}")
+        
+        # Actions
+        while True:
+            if RICH_AVAILABLE:
+                console.print("\n[bold]Actions:[/] [cyan]c[/]=copy [yellow]f[/]=toggle favorite [green]s[/]=save file [red]d[/]=delete [dim]b[/]=back")
+                action = Prompt.ask("[bold]Action[/]", default="b")
+            else:
+                print("\nActions: [c]=copy [f]=favorite [s]=save [d]=delete [b]=back")
+                action = input("Action: ").strip().lower()
+
+            if action == "c":
+                if copy_to_clipboard(saved.prompt):
+                    if RICH_AVAILABLE:
+                        console.print("[green]📋 Copied to clipboard![/]")
+                    else:
+                        print("📋 Copied to clipboard!")
+            elif action == "f":
+                is_fav = self.history.toggle_favorite(saved.id)
+                if RICH_AVAILABLE:
+                    console.print("[yellow]⭐ Favorite toggled[/]" if is_fav else "[dim]Removed from favorites[/]")
+            elif action == "s":
+                self._save_to_file(saved.prompt)
+            elif action == "d":
+                if self._confirm("[red]Delete this prompt?[/]"):
+                    self.history.delete(saved.id)
+                    if RICH_AVAILABLE:
+                        console.print("[red]🗑️  Deleted[/]")
+                    break
+            elif action == "b":
+                break
+
+    def _save_to_file(self, prompt: str, technique: str = "unknown", task: str = ""):
+        """Save prompt to file with format selection."""
+        # Show format options
+        if RICH_AVAILABLE:
+            console.print("\n[bold]Export Formats:[/]")
+            table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+            table.add_column("Key", style="cyan", width=4)
+            table.add_column("Format", width=20)
+            
+            format_keys = list(EXPORT_FORMATS.keys())
+            for i, key in enumerate(format_keys, 1):
+                name, _, ext = EXPORT_FORMATS[key]
+                table.add_row(str(i), f"{name} ({ext})")
+            console.print(table)
+            
+            choice = Prompt.ask("[bold]Format[/]", default="1")
+        else:
+            print("\nExport Formats:")
+            format_keys = list(EXPORT_FORMATS.keys())
+            for i, key in enumerate(format_keys, 1):
+                name, _, ext = EXPORT_FORMATS[key]
+                print(f"  [{i}] {name} ({ext})")
+            choice = input("Format (1): ").strip() or "1"
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(format_keys):
+                format_key = format_keys[idx]
+            else:
+                format_key = "txt"
+        except ValueError:
+            format_key = "txt"
+        
+        # Create metadata
+        metadata = PromptMetadata(
+            technique=technique,
+            task=task[:50] if task else "prompt",
+            created_at=datetime.now().isoformat()
+        )
+        
+        # Export
+        content, extension = export_prompt(prompt, format_key, metadata)
+        
+        # Get filename
+        default_name = f"prompt{extension}"
+        if RICH_AVAILABLE:
+            filename = Prompt.ask("[dim]Filename[/]", default=default_name)
+        else:
+            filename = input(f"Filename ({default_name}): ").strip() or default_name
+        
+        with open(filename, 'w') as f:
+            f.write(content)
+        
+        if RICH_AVAILABLE:
+            console.print(f"[bold green]✅ Exported to {filename}[/]")
+        else:
+            print(f"✅ Exported to {filename}")
 
     def _show_header(self):
         """Display the application header."""
@@ -311,10 +827,10 @@ class InteractivePromptBuilder:
         return self._select_prompt_type()
 
     def _gather_config(self, prompt_type: PromptType, color: str) -> PromptConfig:
-        """Gather configuration based on prompt type."""
+        """Gather configuration based on prompt type with optional live preview."""
         if RICH_AVAILABLE:
             console.print(Panel(
-                f"[bold]Configure your prompt[/]",
+                f"[bold]Configure your prompt[/]" + (" [dim](Preview Mode ON)[/]" if self.preview_mode else ""),
                 border_style=color,
                 box=box.ROUNDED
             ))
@@ -326,22 +842,65 @@ class InteractivePromptBuilder:
             context = input("\n📖 Context (optional, Enter to skip):\n> ").strip()
 
         config = PromptConfig(task=task, context=context)
+        
+        # Show preview after basic config
+        if self.preview_mode:
+            self._show_live_preview(prompt_type, config, color)
 
         # Type-specific configuration
         if prompt_type == PromptType.FEW_SHOT:
             config.examples = self._gather_examples()
+            if self.preview_mode:
+                self._show_live_preview(prompt_type, config, color)
         elif prompt_type == PromptType.ROLE_BASED:
             config.role = self._ask("[bold magenta]🎭 Role/Persona[/]", 
                                     "e.g., 'senior Python developer'")
+            if self.preview_mode:
+                self._show_live_preview(prompt_type, config, color)
         elif prompt_type == PromptType.STRUCTURED:
             config.output_format = self._ask("[bold yellow]📋 Output format[/]",
                                              "e.g., JSON, Markdown, Table")
+            if self.preview_mode:
+                self._show_live_preview(prompt_type, config, color)
 
         # Optional constraints
         if self._confirm("[bold]Add constraints?[/]"):
             config.constraints = self._gather_constraints()
+            if self.preview_mode:
+                self._show_live_preview(prompt_type, config, color)
 
         return config
+
+    def _show_live_preview(self, prompt_type: PromptType, config: PromptConfig, color: str):
+        """Show a live preview of the prompt being built."""
+        preview = self.builder.build(prompt_type, config)
+        token_count = self.token_counter.count_tokens(preview)
+        
+        if RICH_AVAILABLE:
+            # Truncate for preview
+            preview_text = preview[:500] + "..." if len(preview) > 500 else preview
+            console.print()
+            console.print(Panel(
+                f"[dim]{preview_text}[/]",
+                title=f"[dim]👁️ Preview ({token_count} tokens)[/]",
+                border_style="dim",
+                box=box.ROUNDED,
+                padding=(0, 1)
+            ))
+        else:
+            preview_text = preview[:300] + "..." if len(preview) > 300 else preview
+            print(f"\n--- Preview ({token_count} tokens) ---")
+            print(preview_text)
+            print("---")
+
+    def _toggle_preview_mode(self):
+        """Toggle live preview mode."""
+        self.preview_mode = not self.preview_mode
+        status = "ON" if self.preview_mode else "OFF"
+        if RICH_AVAILABLE:
+            console.print(f"[bold]👁️ Preview Mode: [{'green' if self.preview_mode else 'red'}]{status}[/]")
+        else:
+            print(f"👁️ Preview Mode: {status}")
 
     def _ask(self, label: str, hint: str = "") -> str:
         """Ask for input with rich formatting."""
@@ -411,7 +970,7 @@ class InteractivePromptBuilder:
         return constraints
 
     def _display_result(self, prompt: str, color: str):
-        """Display the generated prompt."""
+        """Display the generated prompt with token estimates."""
         if RICH_AVAILABLE:
             console.print()
             console.print(Panel(
@@ -421,28 +980,40 @@ class InteractivePromptBuilder:
                 box=box.DOUBLE,
                 padding=(1, 2)
             ))
+            # Show token estimates
+            self._show_token_estimates(prompt)
         else:
             print("\n" + "=" * 50)
             print("📝 GENERATED PROMPT:")
             print("=" * 50)
             print(prompt)
             print("=" * 50)
+            self._show_token_estimates(prompt)
 
-    def _offer_save_option(self, prompt: str):
-        """Offer to save the prompt to a file."""
-        if self._confirm("\n[bold]💾 Save to file?[/]"):
-            if RICH_AVAILABLE:
-                filename = Prompt.ask("[dim]Filename[/]", default="prompt.txt")
-            else:
-                filename = input("Filename (default: prompt.txt): ").strip() or "prompt.txt"
-
-            with open(filename, 'w') as f:
-                f.write(prompt)
-
-            if RICH_AVAILABLE:
-                console.print(f"[bold green]✅ Saved to {filename}[/]")
-            else:
-                print(f"✅ Saved to {filename}")
+    def _show_token_estimates(self, prompt: str):
+        """Display token count and cost estimates."""
+        estimates = self.token_counter.estimate_all_models(prompt)
+        
+        if RICH_AVAILABLE:
+            table = Table(box=box.SIMPLE, border_style="dim", show_header=True, padding=(0, 1))
+            table.add_column("Model", style="cyan", width=18)
+            table.add_column("Tokens", justify="right", width=8)
+            table.add_column("Input Cost", justify="right", style="green", width=10)
+            table.add_column("Output/1K", justify="right", style="dim", width=10)
+            
+            for est in estimates:
+                table.add_row(
+                    est.model,
+                    str(est.token_count),
+                    est.formatted_cost,
+                    f"${est.output_cost_1k:.4f}"
+                )
+            
+            console.print(Panel(table, title="[dim]💰 Token Estimates[/]", border_style="dim", box=box.ROUNDED))
+        else:
+            print("\n💰 Token Estimates:")
+            for est in estimates:
+                print(f"  {est.model:<18} {est.token_count:>6} tokens  Input: {est.formatted_cost}")
 
     def _continue_prompt(self) -> bool:
         """Ask if user wants to create another prompt."""
