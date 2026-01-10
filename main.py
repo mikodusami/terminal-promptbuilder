@@ -750,7 +750,7 @@ class InteractivePromptBuilder:
             
             format_keys = list(EXPORT_FORMATS.keys())
             for i, key in enumerate(format_keys, 1):
-                name, _, ext = EXPORT_FORMATS[key]
+                name, ext = EXPORT_FORMATS[key]
                 table.add_row(str(i), f"{name} ({ext})")
             console.print(table)
             
@@ -759,7 +759,7 @@ class InteractivePromptBuilder:
             print("\nExport Formats:")
             format_keys = list(EXPORT_FORMATS.keys())
             for i, key in enumerate(format_keys, 1):
-                name, _, ext = EXPORT_FORMATS[key]
+                name, ext = EXPORT_FORMATS[key]
                 print(f"  [{i}] {name} ({ext})")
             choice = input("Format (1): ").strip() or "1"
         

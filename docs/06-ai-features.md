@@ -162,11 +162,11 @@ Testing across models...
 
 ### Supported Providers
 
-| Provider  | Models                                           | Environment Variable |
-| --------- | ------------------------------------------------ | -------------------- |
-| OpenAI    | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo  | `OPENAI_API_KEY`     |
-| Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-haiku | `ANTHROPIC_API_KEY`  |
-| Google    | gemini-1.5-pro, gemini-1.5-flash, gemini-pro     | `GOOGLE_API_KEY`     |
+| Provider  | Models                                             | Environment Variable |
+| --------- | -------------------------------------------------- | -------------------- |
+| OpenAI    | gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo    | `OPENAI_API_KEY`     |
+| Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-haiku   | `ANTHROPIC_API_KEY`  |
+| Google    | gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash | `GOOGLE_API_KEY`     |
 
 ### Setting Up
 

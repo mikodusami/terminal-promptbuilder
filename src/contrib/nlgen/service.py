@@ -132,10 +132,10 @@ class NaturalLanguageGenerator:
         response = await self.client.complete(
             prompt=f"""For this task, which prompt engineering technique would be most effective?
 
-Task: {description}
+            Task: {description}
 
-Respond with just the technique name and a one-sentence reason.
-Options: Chain of Thought, Few-Shot Learning, Role-Based, Structured Output, ReAct, Tree of Thoughts, Self-Consistency""",
+            Respond with just the technique name and a one-sentence reason.
+            Options: Chain of Thought, Few-Shot Learning, Role-Based, Structured Output, ReAct, Tree of Thoughts, Self-Consistency""",
             provider=provider,
             model=model,
             max_tokens=200,

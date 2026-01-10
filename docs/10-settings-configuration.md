@@ -114,13 +114,17 @@ Get your key: https://console.anthropic.com/
 
 ### Google
 
-| Model            | Input/1K | Output/1K |
-| ---------------- | -------- | --------- |
-| gemini-1.5-pro   | Varies   | Varies    |
-| gemini-1.5-flash | Varies   | Varies    |
-| gemini-pro       | Varies   | Varies    |
+| Model                  | Input/1M tokens | Output/1M tokens |
+| ---------------------- | --------------- | ---------------- |
+| gemini-2.5-flash       | $0.30           | $2.50            |
+| gemini-2.5-pro         | $1.25           | $10.00           |
+| gemini-2.5-flash-lite  | $0.10           | $0.40            |
+| gemini-2.0-flash       | $0.10           | $0.40            |
+| gemini-2.0-flash-lite  | $0.075          | $0.30            |
+| gemini-3-flash-preview | $0.50           | $3.00            |
+| gemini-3-pro-preview   | $2.00           | $12.00           |
 
-Get your key: https://makersuite.google.com/app/apikey
+Get your key: https://aistudio.google.com/apikey
 
 ## Custom Base URLs
 

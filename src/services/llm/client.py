@@ -54,11 +54,11 @@ class LLMClient:
     def _get_google_client(self):
         if "google" not in self._clients:
             try:
-                import google.generativeai as genai
+                from google import genai
                 provider = self.config.get_provider("google")
                 if provider and provider.api_key:
-                    genai.configure(api_key=provider.api_key)
-                    self._clients["google"] = genai
+                    client = genai.Client(api_key=provider.api_key)
+                    self._clients["google"] = client
             except ImportError:
                 pass
         return self._clients.get("google")
@@ -143,17 +143,33 @@ class LLMClient:
         )
 
     async def _complete_google(self, prompt, model, system_prompt, max_tokens, temperature) -> LLMResponse:
-        genai = self._get_google_client()
-        if not genai:
+        client = self._get_google_client()
+        if not client:
             return LLMResponse(content="", model=model, provider="google",
-                             error="Google not available. Install: pip install google-generativeai")
+                             error="Google not available. Install: pip install google-genai")
 
-        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        gen_model = genai.GenerativeModel(model)
+        from google.genai import types
+
+        contents = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        config = types.GenerateContentConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
         
         response = await asyncio.to_thread(
-            gen_model.generate_content, full_prompt,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens, temperature=temperature)
+            client.models.generate_content,
+            model=model,
+            contents=contents,
+            config=config,
         )
 
-        return LLMResponse(content=response.text, model=model, provider="google")
+        input_tokens = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
+        output_tokens = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+
+        return LLMResponse(
+            content=response.text,
+            model=model,
+            provider="google",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
