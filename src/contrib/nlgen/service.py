@@ -177,11 +177,11 @@ class NaturalLanguageGenerator:
         
         response = await self.client.complete(
             prompt=f"""Make this task description more specific and actionable for prompt generation.
-Keep it concise but add necessary details.
+            Keep it concise but add necessary details.
 
-Original: {description}
+            Original: {description}
 
-Improved description:""",
+            Improved description:""",
             provider=provider,
             model=model,
             max_tokens=300,
