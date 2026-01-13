@@ -1066,6 +1066,50 @@ class InteractivePromptBuilder:
 
     # ==================== AI FEATURES ====================
 
+    def _select_model_for_feature(self, feature_name: str = "this feature") -> tuple[str, str]:
+        """Prompt user to select a model if multiple providers are available.
+        
+        Returns (provider, model) tuple.
+        """
+        # If only one provider or no multiple providers, use default
+        if not self.api_config.has_multiple_providers():
+            return self.api_config.get_default_model()
+        
+        available_models = self.api_config.get_available_models()
+        default_provider, default_model = self.api_config.get_default_model()
+        
+        if RICH_AVAILABLE:
+            console.print(f"\n[dim]Multiple providers available. Select model for {feature_name}:[/]")
+            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 1))
+            table.add_column("#", width=3)
+            table.add_column("Provider", width=10)
+            table.add_column("Model", width=28)
+            
+            for i, (provider, model) in enumerate(available_models, 1):
+                is_default = provider == default_provider and model == default_model
+                marker = " [dim](default)[/]" if is_default else ""
+                color = {"openai": "cyan", "anthropic": "green", "google": "yellow"}.get(provider, "white")
+                table.add_row(str(i), f"[{color}]{provider}[/]", f"{model}{marker}")
+            
+            console.print(table)
+            choice = Prompt.ask("[bold]Model #[/]", default="1")
+        else:
+            print(f"\nSelect model for {feature_name}:")
+            for i, (provider, model) in enumerate(available_models, 1):
+                is_default = provider == default_provider and model == default_model
+                marker = " (default)" if is_default else ""
+                print(f"  [{i}] {provider}: {model}{marker}")
+            choice = input("Model #: ").strip()
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(available_models):
+                return available_models[idx]
+        except ValueError:
+            pass
+        
+        return default_provider, default_model
+
     def _ai_features_menu(self):
         """Show AI-powered features menu."""
         if not self.api_config.has_any_provider():
@@ -1139,12 +1183,15 @@ class InteractivePromptBuilder:
             description = input("What do you want to do?\n> ").strip()
             context = input("Additional context (optional): ").strip()
 
+        # Select model if multiple providers available
+        provider, model = self._select_model_for_feature("prompt generation")
+
         if RICH_AVAILABLE:
-            with console.status("[bold cyan]Generating prompt...[/]"):
-                result = asyncio.run(self.nl_generator.generate(description, context))
+            with console.status(f"[bold cyan]Generating prompt using {model}...[/]"):
+                result = asyncio.run(self.nl_generator.generate(description, context, provider=provider, model=model))
         else:
-            print("Generating...")
-            result = asyncio.run(self.nl_generator.generate(description, context))
+            print(f"Generating using {model}...")
+            result = asyncio.run(self.nl_generator.generate(description, context, provider=provider, model=model))
 
         if result.error:
             if RICH_AVAILABLE:
@@ -1185,12 +1232,15 @@ class InteractivePromptBuilder:
             prompt = input("Your prompt:\n> ").strip()
             context = input("What's this for? (optional): ").strip()
 
+        # Select model if multiple providers available
+        provider, model = self._select_model_for_feature("prompt optimization")
+
         if RICH_AVAILABLE:
-            with console.status("[bold green]Analyzing and optimizing...[/]"):
-                result = asyncio.run(self.optimizer.optimize(prompt, context))
+            with console.status(f"[bold green]Analyzing and optimizing using {model}...[/]"):
+                result = asyncio.run(self.optimizer.optimize(prompt, context, provider=provider, model=model))
         else:
-            print("Optimizing...")
-            result = asyncio.run(self.optimizer.optimize(prompt, context))
+            print(f"Optimizing using {model}...")
+            result = asyncio.run(self.optimizer.optimize(prompt, context, provider=provider, model=model))
 
         if result.error:
             if RICH_AVAILABLE:
@@ -1578,6 +1628,7 @@ class InteractivePromptBuilder:
         """Settings and configuration menu."""
         while True:
             providers = self.api_config.get_available_providers()
+            default_provider, default_model = self.api_config.get_default_model()
             
             if RICH_AVAILABLE:
                 console.print("\n[bold dim]⚙️ Settings[/]\n")
@@ -1588,6 +1639,12 @@ class InteractivePromptBuilder:
                     status = "[green]✓ Configured[/]" if provider.is_available else "[red]✗ Not set[/]"
                     console.print(f"  {name.capitalize()}: {status}")
                 
+                # Show default model
+                if default_provider and default_model:
+                    console.print(f"\n[bold]Default Model:[/] [cyan]{default_provider}[/] / [green]{default_model}[/]")
+                else:
+                    console.print(f"\n[bold]Default Model:[/] [dim]Not set[/]")
+                
                 console.print()
                 table = Table(box=box.ROUNDED, border_style="dim", show_header=False)
                 table.add_column("Key", width=5)
@@ -1595,6 +1652,7 @@ class InteractivePromptBuilder:
                 table.add_row("[cyan]o[/]", "🔑 [cyan]Set OpenAI key[/]")
                 table.add_row("[green]a[/]", "🔑 [green]Set Anthropic key[/]")
                 table.add_row("[yellow]g[/]", "🔑 [yellow]Set Google key[/]")
+                table.add_row("[magenta]m[/]", "🎯 [magenta]Set Default Model[/]")
                 table.add_row("[red]b[/]", "🔙 [red]Back[/]")
                 console.print(table)
                 choice = Prompt.ask("\n[bold]Select[/]", default="b")
@@ -1604,9 +1662,14 @@ class InteractivePromptBuilder:
                 for name, provider in self.api_config.providers.items():
                     status = "✓" if provider.is_available else "✗"
                     print(f"  {name}: {status}")
+                if default_provider and default_model:
+                    print(f"\nDefault Model: {default_provider} / {default_model}")
+                else:
+                    print("\nDefault Model: Not set")
                 print("\n  [o] Set OpenAI key")
                 print("  [a] Set Anthropic key")
                 print("  [g] Set Google key")
+                print("  [m] Set Default Model")
                 print("  [b] Back")
                 choice = input("\nSelect: ").strip().lower()
 
@@ -1618,6 +1681,74 @@ class InteractivePromptBuilder:
                 self._set_api_key("anthropic")
             elif choice == "g":
                 self._set_api_key("google")
+            elif choice == "m":
+                self._set_default_model()
+
+    def _set_default_model(self):
+        """Set the default model for AI features."""
+        available_models = self.api_config.get_available_models()
+        
+        if not available_models:
+            if RICH_AVAILABLE:
+                console.print("[yellow]No API keys configured. Add keys first.[/]")
+            else:
+                print("No API keys configured. Add keys first.")
+            return
+        
+        if RICH_AVAILABLE:
+            console.print("\n[bold]Available Models:[/]\n")
+            table = Table(box=box.ROUNDED, border_style="dim", show_header=True)
+            table.add_column("#", width=4)
+            table.add_column("Provider", width=12)
+            table.add_column("Model", width=30)
+            table.add_column("Type", style="dim", width=20)
+            
+            model_info = {
+                # OpenAI
+                "gpt-4.1": "Flagship, 1M context",
+                "gpt-4.1-mini": "Balanced",
+                "gpt-4.1-nano": "Cheapest, fast",
+                "o4-mini": "Reasoning model",
+                "gpt-4o": "Legacy",
+                # Anthropic
+                "claude-sonnet-4-5-20250929": "Best balance",
+                "claude-opus-4-5-20251124": "Most capable",
+                "claude-haiku-4-5-20251015": "Cheapest, fast",
+                # Google
+                "gemini-2.5-pro": "Most capable",
+                "gemini-2.5-flash": "Fast, balanced",
+                "gemini-2.5-flash-lite": "Cheapest, fast",
+            }
+            
+            for i, (provider, model) in enumerate(available_models, 1):
+                info = model_info.get(model, "")
+                color = {"openai": "cyan", "anthropic": "green", "google": "yellow"}.get(provider, "white")
+                table.add_row(str(i), f"[{color}]{provider}[/]", model, info)
+            
+            console.print(table)
+            choice = Prompt.ask("\n[bold]Select model #[/]", default="1")
+        else:
+            print("\nAvailable Models:\n")
+            for i, (provider, model) in enumerate(available_models, 1):
+                print(f"  [{i}] {provider}: {model}")
+            choice = input("\nSelect model #: ").strip()
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(available_models):
+                provider, model = available_models[idx]
+                self.api_config.set_default_model(provider, model)
+                # Reinitialize client
+                self.llm_client = LLMClient(self.api_config)
+                self.optimizer = PromptOptimizer(self.llm_client)
+                self.nl_generator = NaturalLanguageGenerator(self.llm_client)
+                
+                if RICH_AVAILABLE:
+                    console.print(f"[green]✓ Default set to {provider} / {model}[/]")
+                else:
+                    print(f"✓ Default set to {provider} / {model}")
+        except ValueError:
+            pass
 
     def _set_api_key(self, provider: str):
         """Set API key for a provider."""

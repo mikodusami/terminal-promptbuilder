@@ -23,22 +23,28 @@ class ProviderConfig:
 PROVIDERS = {
     "openai": {
         "env_key": "OPENAI_API_KEY",
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "models": [
+            "gpt-4.1",           # Latest flagship, 1M context
+            "gpt-4.1-mini",      # Balanced performance/cost
+            "gpt-4.1-nano",      # Cheapest, fast
+            "o4-mini",           # Reasoning model
+            "gpt-4o",            # Legacy, still supported
+        ],
     },
     "anthropic": {
         "env_key": "ANTHROPIC_API_KEY",
-        "models": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+        "models": [
+            "claude-sonnet-4-5-20250929",   # Best balance of speed/intelligence
+            "claude-opus-4-5-20251124",     # Most capable
+            "claude-haiku-4-5-20251015",    # Cheapest, fastest
+        ],
     },
     "google": {
         "env_key": "GOOGLE_API_KEY",
         "models": [
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
+            "gemini-2.5-pro",        # Most capable
+            "gemini-2.5-flash",      # Fast, balanced
+            "gemini-2.5-flash-lite", # Cheapest, fastest
         ],
     }
 }
@@ -50,6 +56,8 @@ class LLMConfig:
     def __init__(self):
         self.config_path = get_config_dir() / "api_config.json"
         self.providers: dict[str, ProviderConfig] = {}
+        self.default_provider: Optional[str] = None
+        self.default_model: Optional[str] = None
         self._load_config()
 
     def _load_config(self):
@@ -61,6 +69,10 @@ class LLMConfig:
                     file_config = json.load(f)
             except Exception:
                 pass
+
+        # Load default model settings
+        self.default_provider = file_config.get("default_provider")
+        self.default_model = file_config.get("default_model")
 
         for name, info in PROVIDERS.items():
             api_key = get_env(info["env_key"]) or file_config.get(name, {}).get("api_key")
@@ -84,6 +96,13 @@ class LLMConfig:
                     "base_url": provider.base_url
                 }
         
+        # Save default model settings
+        if self.default_provider:
+            config["default_provider"] = self.default_provider
+        if self.default_model:
+            config["default_model"] = self.default_model
+        
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, 'w') as f:
             json.dump(config, f, indent=2)
 
@@ -98,6 +117,33 @@ class LLMConfig:
             self.providers[provider].base_url = base_url
         
         self.save_config()
+
+    def set_default_model(self, provider: str, model: str):
+        """Set the default provider and model."""
+        if provider not in self.providers:
+            raise ValueError(f"Unknown provider: {provider}")
+        if model not in self.providers[provider].models:
+            raise ValueError(f"Unknown model: {model}")
+        
+        self.default_provider = provider
+        self.default_model = model
+        self.save_config()
+
+    def get_default_model(self) -> tuple[Optional[str], Optional[str]]:
+        """Get the default provider and model."""
+        # Return configured default if valid
+        if self.default_provider and self.default_model:
+            if self.providers.get(self.default_provider, ProviderConfig("", None)).is_available:
+                return self.default_provider, self.default_model
+        
+        # Fall back to first available
+        available = self.get_available_providers()
+        if available:
+            provider = available[0]
+            model = self.providers[provider].models[0]
+            return provider, model
+        
+        return None, None
 
     def get_available_providers(self) -> list[str]:
         """Get list of providers with valid API keys."""
@@ -119,3 +165,7 @@ class LLMConfig:
     def has_any_provider(self) -> bool:
         """Check if at least one provider is configured."""
         return any(p.is_available for p in self.providers.values())
+
+    def has_multiple_providers(self) -> bool:
+        """Check if multiple providers are configured."""
+        return len(self.get_available_providers()) > 1

@@ -74,19 +74,18 @@ class LLMClient:
     ) -> LLMResponse:
         """Send a completion request to the specified provider."""
         
+        if not provider or not model:
+            default_provider, default_model = self.config.get_default_model()
+            if not provider:
+                provider = default_provider
+            if not model:
+                model = default_model
+        
         if not provider:
-            available = self.config.get_available_providers()
-            if not available:
-                return LLMResponse(
-                    content="", model="", provider="",
-                    error="No API keys configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY."
-                )
-            provider = available[0]
-
-        if not model:
-            provider_config = self.config.get_provider(provider)
-            if provider_config and provider_config.models:
-                model = provider_config.models[0]
+            return LLMResponse(
+                content="", model="", provider="",
+                error="No API keys configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY."
+            )
 
         try:
             if provider == "openai":
