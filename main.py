@@ -30,6 +30,12 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
 
+try:
+    from simple_term_menu import TerminalMenu
+    MENU_AVAILABLE = True
+except ImportError:
+    MENU_AVAILABLE = False
+
 from src.contrib.history.service import HistoryService as PromptHistory
 from src.contrib.history.common import SavedPrompt
 from src.contrib.templates.service import TemplateService as TemplateManager
@@ -55,6 +61,38 @@ from src.contrib.variables.service import VariableInterpolator
 from src.contrib.plugins.service import PluginManager
 
 console = Console() if RICH_AVAILABLE else None
+
+
+def interactive_select(options: list[str], title: str = "", multi_select: bool = False) -> int | list[int] | None:
+    """Show an interactive selection menu. Returns index or list of indices for multi-select."""
+    if MENU_AVAILABLE:
+        menu = TerminalMenu(
+            options,
+            title=title,
+            multi_select=multi_select,
+            show_multi_select_hint=multi_select,
+            multi_select_select_on_accept=False,
+            multi_select_empty_ok=False,
+        )
+        result = menu.show()
+        if multi_select:
+            return list(menu.chosen_menu_indices) if menu.chosen_menu_indices else None
+        return result
+    else:
+        # Fallback to numbered input
+        print(f"\n{title}" if title else "")
+        for i, opt in enumerate(options, 1):
+            print(f"  [{i}] {opt}")
+        try:
+            if multi_select:
+                choices = input("Select numbers (space-separated): ").strip().split()
+                return [int(c) - 1 for c in choices if c.isdigit() and 0 < int(c) <= len(options)]
+            else:
+                choice = input("Select: ").strip()
+                idx = int(choice) - 1
+                return idx if 0 <= idx < len(options) else None
+        except (ValueError, IndexError):
+            return None
 
 
 class PromptType(Enum):
@@ -380,45 +418,33 @@ class InteractivePromptBuilder:
     def _show_main_menu(self) -> str:
         """Show main menu and return selected action."""
         has_ai = self.api_config.has_any_provider()
-        ai_status = "[green]●[/]" if has_ai else "[red]○[/]"
+        ai_indicator = "●" if has_ai else "○"
+        preview_status = "ON" if self.preview_mode else "OFF"
+        
+        menu_options = [
+            "✨ New Prompt         - Create a new prompt",
+            "🔗 Combine            - Chain multiple techniques",
+            "📦 Templates          - Use custom templates",
+            "📜 History            - Browse recent prompts",
+            "⭐ Favorites          - View favorite prompts",
+            "🔍 Search             - Search saved prompts",
+            f"👁️  Preview Mode [{preview_status}]  - Live prompt preview",
+            f"🤖 AI Features [{ai_indicator}]    - Optimize, generate, test, chains",
+            "⚙️  Settings           - API keys & configuration",
+            "🚪 Quit               - Exit the builder",
+        ]
+        
+        actions = ["new", "combine", "templates", "history", "favorites", 
+                   "search", "preview", "ai", "settings", "quit"]
         
         if RICH_AVAILABLE:
-            console.print("[bold bright_white]Main Menu:[/]\n")
-            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
-            table.add_column("Key", style="bold bright_white", width=5)
-            table.add_column("Action", width=22)
-            table.add_column("Description", style="dim")
-            table.add_row("[cyan]n[/]", "✨ [cyan]New Prompt[/]", "Create a new prompt")
-            table.add_row("[bright_cyan]m[/]", "🔗 [bright_cyan]Combine[/]", "Chain multiple techniques")
-            table.add_row("[blue]t[/]", "📦 [blue]Templates[/]", "Use custom templates")
-            table.add_row("[green]h[/]", "📜 [green]History[/]", "Browse recent prompts")
-            table.add_row("[yellow]f[/]", "⭐ [yellow]Favorites[/]", "View favorite prompts")
-            table.add_row("[magenta]s[/]", "🔍 [magenta]Search[/]", "Search saved prompts")
-            table.add_row("[white]p[/]", "👁️  [white]Preview Mode[/]", f"{'ON' if self.preview_mode else 'OFF'} - Live prompt preview")
-            table.add_row(f"[bright_magenta]a[/]", f"🤖 [bright_magenta]AI Features[/] {ai_status}", "Optimize, generate, test, chains")
-            table.add_row("[dim]c[/]", "⚙️  [dim]Settings[/]", "API keys & configuration")
-            table.add_row("[red]q[/]", "🚪 [red]Quit[/]", "Exit the builder")
-            console.print(table)
-            console.print()
-            choice = Prompt.ask("[bold]Your choice[/]", default="n")
-        else:
-            ai_indicator = "●" if has_ai else "○"
-            print("\nMain Menu:\n")
-            print("  [n] ✨ New Prompt    - Create a new prompt")
-            print("  [m] 🔗 Combine       - Chain multiple techniques")
-            print("  [t] 📦 Templates     - Use custom templates")
-            print("  [h] 📜 History       - Browse recent prompts")
-            print("  [f] ⭐ Favorites     - View favorite prompts")
-            print("  [s] 🔍 Search        - Search saved prompts")
-            print(f"  [p] 👁️  Preview Mode  - {'ON' if self.preview_mode else 'OFF'} - Live prompt preview")
-            print(f"  [a] 🤖 AI Features {ai_indicator} - Optimize, generate, test, chains")
-            print("  [c] ⚙️  Settings      - API keys & configuration")
-            print("  [q] 🚪 Quit          - Exit the builder")
-            choice = input("\nYour choice: ").strip().lower()
-
-        menu_map = {"n": "new", "m": "combine", "t": "templates", "h": "history", "f": "favorites", 
-                    "s": "search", "p": "preview", "a": "ai", "c": "settings", "q": "quit"}
-        return menu_map.get(choice.lower(), "new")
+            console.print("\n[bold]Main Menu[/] [dim](↑↓ to navigate, Enter to select)[/]\n")
+        
+        idx = interactive_select(menu_options, title="")
+        
+        if idx is not None and 0 <= idx < len(actions):
+            return actions[idx]
+        return "new"
 
     def _create_new_prompt(self):
         """Create a new prompt flow."""
@@ -823,51 +849,29 @@ class InteractivePromptBuilder:
 
     def _select_prompt_type(self) -> tuple[Optional[PromptType], str]:
         """Let user select a prompt engineering technique."""
+        # Build menu options
+        menu_options = []
+        for _, name, icon, _, desc in self.TECHNIQUES:
+            menu_options.append(f"{icon} {name:<20} - {desc}")
+        menu_options.append("🚪 Back to Main Menu")
+        
         if RICH_AVAILABLE:
-            console.print("[bold bright_white]Select a technique:[/]\n")
-            
-            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
-            table.add_column("Key", style="bold bright_white", width=5)
-            table.add_column("Technique", width=22)
-            table.add_column("Description", style="dim")
-
-            for i, (_, name, icon, color, desc) in enumerate(self.TECHNIQUES, 1):
-                table.add_row(
-                    f"[{color}]{i}[/]",
-                    f"{icon} [{color}]{name}[/]",
-                    desc
-                )
-            table.add_row("[red]q[/]", "🚪 [red]Quit[/]", "Exit the builder")
-            
-            console.print(table)
-            console.print()
-            
-            choice = Prompt.ask("[bold]Your choice[/]", default="1")
-        else:
-            print("Select a technique:\n")
-            for i, (_, name, icon, _, desc) in enumerate(self.TECHNIQUES, 1):
-                print(f"  [{i}] {icon} {name:<20} - {desc}")
-            print("  [q] 🚪 Quit")
-            choice = input("\nYour choice: ").strip()
-
-        if choice.lower() == 'q':
+            console.print("\n[bold]Select a technique[/] [dim](↑↓ to navigate, Enter to select)[/]\n")
+        
+        idx = interactive_select(menu_options, title="")
+        
+        if idx is None or idx == len(self.TECHNIQUES):  # Back/Quit
             return None, ""
-
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(self.TECHNIQUES):
-                ptype, name, icon, color, _ = self.TECHNIQUES[idx]
-                if RICH_AVAILABLE:
-                    console.print(f"\n[{color}]✓ Selected: {icon} {name}[/]\n")
-                return ptype, color
-        except ValueError:
-            pass
-
-        if RICH_AVAILABLE:
-            console.print("[red]Invalid choice, try again.[/]\n")
-        else:
-            print("Invalid choice, try again.\n")
-        return self._select_prompt_type()
+        
+        if 0 <= idx < len(self.TECHNIQUES):
+            ptype, name, icon, color, _ = self.TECHNIQUES[idx]
+            if RICH_AVAILABLE:
+                console.print(f"\n[{color}]✓ Selected: {icon} {name}[/]\n")
+            else:
+                print(f"\n✓ Selected: {icon} {name}\n")
+            return ptype, color
+        
+        return None, ""
 
     def _gather_config(self, prompt_type: PromptType, color: str) -> PromptConfig:
         """Gather configuration based on prompt type with optional live preview."""
@@ -1034,29 +1038,47 @@ class InteractivePromptBuilder:
             self._show_token_estimates(prompt)
 
     def _show_token_estimates(self, prompt: str):
-        """Display token count and cost estimates."""
-        estimates = self.token_counter.estimate_all_models(prompt)
+        """Display token count and cost estimates for available providers only."""
+        available_providers = self.api_config.get_available_providers()
+        
+        if not available_providers:
+            # No API keys configured - show a simple token count
+            token_count = self.token_counter.count_tokens(prompt)
+            if RICH_AVAILABLE:
+                console.print(f"\n[dim]📊 Token count: ~{token_count} tokens[/]")
+                console.print("[dim]Configure API keys in Settings to see cost estimates[/]")
+            else:
+                print(f"\n📊 Token count: ~{token_count} tokens")
+                print("Configure API keys in Settings to see cost estimates")
+            return
+        
+        estimates = self.token_counter.estimate_for_providers(prompt, available_providers)
+        
+        if not estimates:
+            return
         
         if RICH_AVAILABLE:
             table = Table(box=box.SIMPLE, border_style="dim", show_header=True, padding=(0, 1))
-            table.add_column("Model", style="cyan", width=18)
+            table.add_column("Model", style="cyan", width=28)
             table.add_column("Tokens", justify="right", width=8)
             table.add_column("Input Cost", justify="right", style="green", width=10)
-            table.add_column("Output/1K", justify="right", style="dim", width=10)
             
             for est in estimates:
+                # Shorten model name for display
+                display_name = est.model
+                if len(display_name) > 26:
+                    display_name = display_name[:24] + ".."
                 table.add_row(
-                    est.model,
+                    display_name,
                     str(est.token_count),
                     est.formatted_cost,
-                    f"${est.output_cost_1k:.4f}"
                 )
             
             console.print(Panel(table, title="[dim]💰 Token Estimates[/]", border_style="dim", box=box.ROUNDED))
         else:
             print("\n💰 Token Estimates:")
             for est in estimates:
-                print(f"  {est.model:<18} {est.token_count:>6} tokens  Input: {est.formatted_cost}")
+                print(f"  {est.model:<28} {est.token_count:>6} tokens  {est.formatted_cost}")
 
     def _continue_prompt(self) -> bool:
         """Ask if user wants to create another prompt."""
@@ -1078,35 +1100,22 @@ class InteractivePromptBuilder:
         available_models = self.api_config.get_available_models()
         default_provider, default_model = self.api_config.get_default_model()
         
+        # Build menu options
+        menu_options = []
+        for provider, model in available_models:
+            is_default = provider == default_provider and model == default_model
+            marker = " (default)" if is_default else ""
+            menu_options.append(f"{provider}: {model}{marker}")
+        
         if RICH_AVAILABLE:
-            console.print(f"\n[dim]Multiple providers available. Select model for {feature_name}:[/]")
-            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 1))
-            table.add_column("#", width=3)
-            table.add_column("Provider", width=10)
-            table.add_column("Model", width=28)
-            
-            for i, (provider, model) in enumerate(available_models, 1):
-                is_default = provider == default_provider and model == default_model
-                marker = " [dim](default)[/]" if is_default else ""
-                color = {"openai": "cyan", "anthropic": "green", "google": "yellow"}.get(provider, "white")
-                table.add_row(str(i), f"[{color}]{provider}[/]", f"{model}{marker}")
-            
-            console.print(table)
-            choice = Prompt.ask("[bold]Model #[/]", default="1")
+            console.print(f"\n[dim]Select model for {feature_name}:[/]")
         else:
             print(f"\nSelect model for {feature_name}:")
-            for i, (provider, model) in enumerate(available_models, 1):
-                is_default = provider == default_provider and model == default_model
-                marker = " (default)" if is_default else ""
-                print(f"  [{i}] {provider}: {model}{marker}")
-            choice = input("Model #: ").strip()
         
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(available_models):
-                return available_models[idx]
-        except ValueError:
-            pass
+        idx = interactive_select(menu_options, title="")
+        
+        if idx is not None and 0 <= idx < len(available_models):
+            return available_models[idx]
         
         return default_provider, default_model
 
@@ -1125,46 +1134,39 @@ class InteractivePromptBuilder:
                 print("\n⚠️ No API keys configured! Go to Settings to add your keys.\n")
             return
 
+        menu_options = [
+            "🪄 Generate from Description  - Describe task in plain English",
+            "✨ Optimize Prompt            - AI-powered prompt improvement",
+            "🧪 Test Prompt                - Test against selected models",
+            "⛓️  Prompt Chains              - Multi-step workflows",
+            "📤 Share & Import             - Export/import prompt libraries",
+            "📊 Analytics                  - View usage statistics",
+            "🔙 Back                       - Return to main menu",
+        ]
+        actions = ["generate", "optimize", "test", "chains", "share", "analytics", "back"]
+
         while True:
             if RICH_AVAILABLE:
-                console.print("\n[bold bright_magenta]🤖 AI Features[/]\n")
-                table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
-                table.add_column("Key", width=5)
-                table.add_column("Feature", width=25)
-                table.add_column("Description", style="dim")
-                table.add_row("[cyan]g[/]", "🪄 [cyan]Generate from Description[/]", "Describe task in plain English")
-                table.add_row("[green]o[/]", "✨ [green]Optimize Prompt[/]", "AI-powered prompt improvement")
-                table.add_row("[yellow]t[/]", "🧪 [yellow]Test Prompt[/]", "Test against multiple models")
-                table.add_row("[magenta]c[/]", "⛓️  [magenta]Prompt Chains[/]", "Multi-step workflows")
-                table.add_row("[blue]s[/]", "📤 [blue]Share & Import[/]", "Export/import prompt libraries")
-                table.add_row("[white]a[/]", "📊 [white]Analytics[/]", "View usage statistics")
-                table.add_row("[red]b[/]", "🔙 [red]Back[/]", "Return to main menu")
-                console.print(table)
-                choice = Prompt.ask("\n[bold]Select[/]", default="b")
-            else:
-                print("\n🤖 AI Features:\n")
-                print("  [g] 🪄 Generate from Description")
-                print("  [o] ✨ Optimize Prompt")
-                print("  [t] 🧪 Test Prompt")
-                print("  [c] ⛓️  Prompt Chains")
-                print("  [s] 📤 Share & Import")
-                print("  [a] 📊 Analytics")
-                print("  [b] 🔙 Back")
-                choice = input("\nSelect: ").strip().lower()
-
-            if choice == "b":
+                console.print("\n[bold]🤖 AI Features[/] [dim](↑↓ to navigate, Enter to select)[/]\n")
+            
+            idx = interactive_select(menu_options, title="")
+            
+            if idx is None or idx == 6:  # Back
                 break
-            elif choice == "g":
+            
+            action = actions[idx] if idx is not None else "back"
+            
+            if action == "generate":
                 self._generate_from_description()
-            elif choice == "o":
+            elif action == "optimize":
                 self._optimize_prompt()
-            elif choice == "t":
+            elif action == "test":
                 self._test_prompt()
-            elif choice == "c":
+            elif action == "chains":
                 self._prompt_chains_menu()
-            elif choice == "s":
+            elif action == "share":
                 self._sharing_menu()
-            elif choice == "a":
+            elif action == "analytics":
                 self._show_analytics()
 
     def _generate_from_description(self):
@@ -1281,7 +1283,7 @@ class InteractivePromptBuilder:
         self._prompt_actions(prompt_id, result.optimized_prompt, "green")
 
     def _test_prompt(self):
-        """Test a prompt against multiple models."""
+        """Test a prompt against selected models."""
         import asyncio
         
         if RICH_AVAILABLE:
@@ -1299,22 +1301,44 @@ class InteractivePromptBuilder:
         if not available:
             if RICH_AVAILABLE:
                 console.print("[red]No models available[/]")
+            else:
+                print("No models available")
             return
 
+        # Let user select which models to test
+        model_options = [f"{provider}: {model}" for provider, model in available]
+        
         if RICH_AVAILABLE:
-            console.print("\n[bold]Available models:[/]")
-            for i, (provider, model) in enumerate(available[:6], 1):
-                console.print(f"  [{i}] {provider}: {model}")
-            
-            with console.status("[bold yellow]Testing across models...[/]"):
+            console.print("\n[bold]Select models to test[/] [dim](Space to select, Enter to confirm)[/]\n")
+        else:
+            print("\nSelect models to test (space-separated numbers):\n")
+        
+        selected_indices = interactive_select(model_options, title="", multi_select=True)
+        
+        if not selected_indices:
+            if RICH_AVAILABLE:
+                console.print("[yellow]No models selected[/]")
+            else:
+                print("No models selected")
+            return
+        
+        selected_models = [available[i] for i in selected_indices if i < len(available)]
+        
+        if not selected_models:
+            return
+
+        # Run tests
+        if RICH_AVAILABLE:
+            console.print(f"\n[dim]Testing {len(selected_models)} model(s)...[/]")
+            with console.status("[bold yellow]Running tests...[/]"):
                 results = []
-                for provider, model in available[:3]:  # Test first 3
+                for provider, model in selected_models:
                     response = asyncio.run(self.llm_client.complete(prompt, provider, model, max_tokens=500))
                     results.append((provider, model, response))
         else:
-            print("\nTesting...")
+            print(f"\nTesting {len(selected_models)} model(s)...")
             results = []
-            for provider, model in available[:3]:
+            for provider, model in selected_models:
                 response = asyncio.run(self.llm_client.complete(prompt, provider, model, max_tokens=500))
                 results.append((provider, model, response))
 
@@ -1627,61 +1651,44 @@ class InteractivePromptBuilder:
     def _settings_menu(self):
         """Settings and configuration menu."""
         while True:
-            providers = self.api_config.get_available_providers()
             default_provider, default_model = self.api_config.get_default_model()
             
+            # Build status display
+            status_lines = []
+            for name, provider in self.api_config.providers.items():
+                status = "✓" if provider.is_available else "✗"
+                status_lines.append(f"{name.capitalize()}: {status}")
+            
+            default_display = f"{default_provider}/{default_model}" if default_provider else "Not set"
+            
             if RICH_AVAILABLE:
-                console.print("\n[bold dim]⚙️ Settings[/]\n")
-                
-                # Show current status
-                console.print("[bold]API Keys Status:[/]")
-                for name, provider in self.api_config.providers.items():
-                    status = "[green]✓ Configured[/]" if provider.is_available else "[red]✗ Not set[/]"
-                    console.print(f"  {name.capitalize()}: {status}")
-                
-                # Show default model
-                if default_provider and default_model:
-                    console.print(f"\n[bold]Default Model:[/] [cyan]{default_provider}[/] / [green]{default_model}[/]")
-                else:
-                    console.print(f"\n[bold]Default Model:[/] [dim]Not set[/]")
-                
-                console.print()
-                table = Table(box=box.ROUNDED, border_style="dim", show_header=False)
-                table.add_column("Key", width=5)
-                table.add_column("Action", width=30)
-                table.add_row("[cyan]o[/]", "🔑 [cyan]Set OpenAI key[/]")
-                table.add_row("[green]a[/]", "🔑 [green]Set Anthropic key[/]")
-                table.add_row("[yellow]g[/]", "🔑 [yellow]Set Google key[/]")
-                table.add_row("[magenta]m[/]", "🎯 [magenta]Set Default Model[/]")
-                table.add_row("[red]b[/]", "🔙 [red]Back[/]")
-                console.print(table)
-                choice = Prompt.ask("\n[bold]Select[/]", default="b")
+                console.print("\n[bold]⚙️ Settings[/]\n")
+                console.print(f"API Keys: {' | '.join(status_lines)}")
+                console.print(f"Default Model: {default_display}\n")
             else:
                 print("\n⚙️ Settings\n")
-                print("API Keys Status:")
-                for name, provider in self.api_config.providers.items():
-                    status = "✓" if provider.is_available else "✗"
-                    print(f"  {name}: {status}")
-                if default_provider and default_model:
-                    print(f"\nDefault Model: {default_provider} / {default_model}")
-                else:
-                    print("\nDefault Model: Not set")
-                print("\n  [o] Set OpenAI key")
-                print("  [a] Set Anthropic key")
-                print("  [g] Set Google key")
-                print("  [m] Set Default Model")
-                print("  [b] Back")
-                choice = input("\nSelect: ").strip().lower()
-
-            if choice == "b":
+                print(f"API Keys: {' | '.join(status_lines)}")
+                print(f"Default Model: {default_display}\n")
+            
+            menu_options = [
+                "🔑 Set OpenAI API Key",
+                "🔑 Set Anthropic API Key", 
+                "🔑 Set Google API Key",
+                "🎯 Set Default Model",
+                "🔙 Back",
+            ]
+            
+            idx = interactive_select(menu_options, title="")
+            
+            if idx is None or idx == 4:  # Back
                 break
-            elif choice == "o":
+            elif idx == 0:
                 self._set_api_key("openai")
-            elif choice == "a":
+            elif idx == 1:
                 self._set_api_key("anthropic")
-            elif choice == "g":
+            elif idx == 2:
                 self._set_api_key("google")
-            elif choice == "m":
+            elif idx == 3:
                 self._set_default_model()
 
     def _set_default_model(self):
@@ -1695,60 +1702,47 @@ class InteractivePromptBuilder:
                 print("No API keys configured. Add keys first.")
             return
         
-        if RICH_AVAILABLE:
-            console.print("\n[bold]Available Models:[/]\n")
-            table = Table(box=box.ROUNDED, border_style="dim", show_header=True)
-            table.add_column("#", width=4)
-            table.add_column("Provider", width=12)
-            table.add_column("Model", width=30)
-            table.add_column("Type", style="dim", width=20)
-            
-            model_info = {
-                # OpenAI
-                "gpt-4.1": "Flagship, 1M context",
-                "gpt-4.1-mini": "Balanced",
-                "gpt-4.1-nano": "Cheapest, fast",
-                "o4-mini": "Reasoning model",
-                "gpt-4o": "Legacy",
-                # Anthropic
-                "claude-sonnet-4-5-20250929": "Best balance",
-                "claude-opus-4-5-20251124": "Most capable",
-                "claude-haiku-4-5-20251015": "Cheapest, fast",
-                # Google
-                "gemini-2.5-pro": "Most capable",
-                "gemini-2.5-flash": "Fast, balanced",
-                "gemini-2.5-flash-lite": "Cheapest, fast",
-            }
-            
-            for i, (provider, model) in enumerate(available_models, 1):
-                info = model_info.get(model, "")
-                color = {"openai": "cyan", "anthropic": "green", "google": "yellow"}.get(provider, "white")
-                table.add_row(str(i), f"[{color}]{provider}[/]", model, info)
-            
-            console.print(table)
-            choice = Prompt.ask("\n[bold]Select model #[/]", default="1")
-        else:
-            print("\nAvailable Models:\n")
-            for i, (provider, model) in enumerate(available_models, 1):
-                print(f"  [{i}] {provider}: {model}")
-            choice = input("\nSelect model #: ").strip()
+        model_info = {
+            # OpenAI
+            "gpt-4.1": "Flagship, 1M context",
+            "gpt-4.1-mini": "Balanced",
+            "gpt-4.1-nano": "Cheapest, fast",
+            "o4-mini": "Reasoning model",
+            "gpt-4o": "Legacy",
+            # Anthropic
+            "claude-sonnet-4-5-20250929": "Best balance",
+            "claude-opus-4-5-20251124": "Most capable",
+            "claude-haiku-4-5-20251015": "Cheapest, fast",
+            # Google
+            "gemini-2.5-pro": "Most capable",
+            "gemini-2.5-flash": "Fast, balanced",
+            "gemini-2.5-flash-lite": "Cheapest, fast",
+        }
         
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(available_models):
-                provider, model = available_models[idx]
-                self.api_config.set_default_model(provider, model)
-                # Reinitialize client
-                self.llm_client = LLMClient(self.api_config)
-                self.optimizer = PromptOptimizer(self.llm_client)
-                self.nl_generator = NaturalLanguageGenerator(self.llm_client)
-                
-                if RICH_AVAILABLE:
-                    console.print(f"[green]✓ Default set to {provider} / {model}[/]")
-                else:
-                    print(f"✓ Default set to {provider} / {model}")
-        except ValueError:
-            pass
+        # Build menu options
+        menu_options = []
+        for provider, model in available_models:
+            info = model_info.get(model, "")
+            info_str = f" ({info})" if info else ""
+            menu_options.append(f"{provider}: {model}{info_str}")
+        
+        if RICH_AVAILABLE:
+            console.print("\n[bold]Select Default Model[/]\n")
+        
+        idx = interactive_select(menu_options, title="")
+        
+        if idx is not None and 0 <= idx < len(available_models):
+            provider, model = available_models[idx]
+            self.api_config.set_default_model(provider, model)
+            # Reinitialize client
+            self.llm_client = LLMClient(self.api_config)
+            self.optimizer = PromptOptimizer(self.llm_client)
+            self.nl_generator = NaturalLanguageGenerator(self.llm_client)
+            
+            if RICH_AVAILABLE:
+                console.print(f"\n[green]✓ Default set to {provider} / {model}[/]")
+            else:
+                print(f"\n✓ Default set to {provider} / {model}")
 
     def _set_api_key(self, provider: str):
         """Set API key for a provider."""
