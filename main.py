@@ -42,7 +42,7 @@ from src.services.llm.config import LLMConfig as APIConfig
 from src.services.llm.client import LLMClient
 from src.services.context import ContextManager
 
-# Workbench discovery system - replaces hard-coded contrib imports
+# Workbench discovery system - all features accessed through discovery
 from src.workbench import (
     get_registry,
     reset_registry,
@@ -52,28 +52,26 @@ from src.workbench import (
     FeatureResult,
 )
 
-# Import contrib services directly for backward compatibility during transition
-# These will be accessed via the discovery system in the future
-from src.workbench.contrib.history.service import HistoryService as PromptHistory
+# Minimal imports for core functionality that main.py needs directly
+# History and Analytics are needed for prompt saving and tracking
+from src.workbench.contrib.history.service import HistoryService
 from src.workbench.contrib.history.common import SavedPrompt
-from src.workbench.contrib.templates.service import TemplateService as TemplateManager
-from src.workbench.contrib.templates.common import CustomTemplate, YAML_AVAILABLE
-from src.workbench.contrib.optimizer.service import OptimizerService as PromptOptimizer
-from src.workbench.contrib.optimizer.common import OptimizationResult
-from src.workbench.contrib.testing.service import TestingService as PromptTestSuite
-from src.workbench.contrib.testing.common import TestCase, TestResult
-from src.workbench.contrib.chains.service import ChainService as ChainExecutor
-from src.workbench.contrib.chains.common import ChainStep, PromptChain, ChainResult
-from src.workbench.contrib.chains.builtin import BUILTIN_CHAINS
 from src.workbench.contrib.analytics.service import PromptAnalytics
-from src.workbench.contrib.nlgen.service import NaturalLanguageGenerator
-from src.workbench.contrib.variables.service import VariableInterpolator
 
 console = Console() if RICH_AVAILABLE else None
 
 
 def interactive_select(options: list[str], title: str = "", multi_select: bool = False) -> int | list[int] | None:
-    """Show an interactive selection menu. Returns index or list of indices for multi-select."""
+    """Show an interactive selection menu.
+    
+    Args:
+        options: List of menu option strings to display
+        title: Optional title for the menu
+        multi_select: Whether to allow multiple selections
+        
+    Returns:
+        Single index for single-select, list of indices for multi-select, or None if cancelled
+    """
     if MENU_AVAILABLE:
         menu = TerminalMenu(
             options,
@@ -126,21 +124,18 @@ class InteractivePromptBuilder:
 
     def __init__(self, verbose: bool = False):
         self.builder = PromptBuilder()
-        self.history = PromptHistory()
-        self.template_manager = TemplateManager()
         self.token_counter = TokenCounter()
         self.preview_mode = False
         self.verbose = verbose
         
-        # Advanced features
+        # Core services needed for prompt building
         self.api_config = APIConfig()
         self.llm_client = LLMClient(self.api_config)
-        self.optimizer = PromptOptimizer(self.llm_client)
-        self.test_suite = PromptTestSuite(self.llm_client)
-        self.chain_executor = ChainExecutor(self.llm_client)
         self.context_manager = ContextManager()
+        
+        # History and analytics are core services used across the app
+        self.history = HistoryService()
         self.analytics = PromptAnalytics()
-        self.nl_generator = NaturalLanguageGenerator(self.llm_client)
         
         # Initialize the feature registry at startup (Requirements: 3.1, 3.3)
         self.registry = get_registry()
@@ -192,94 +187,25 @@ class InteractivePromptBuilder:
             elif action == "settings":
                 self._settings_menu()
 
-    def _use_custom_template(self):
-        """Use a custom template to create a prompt."""
-        templates = self.template_manager.list_templates()
-        
-        if not templates:
+    def _use_custom_template(self) -> None:
+        """Use a custom template to create a prompt via the discovery system."""
+        # Get the templates feature from the registry
+        templates_feature = self.registry.get("templates")
+        if templates_feature is None:
             if RICH_AVAILABLE:
-                console.print(f"[dim]No custom templates found. Add templates to:[/]")
-                console.print(f"[cyan]{self.template_manager.get_config_path()}[/]\n")
+                console.print("[red]Templates feature not available[/]")
             else:
-                print(f"No custom templates. Add them to: {self.template_manager.get_config_path()}\n")
+                print("Templates feature not available")
             return
         
-        # Display templates
-        if RICH_AVAILABLE:
-            console.print("[bold bright_white]Custom Templates:[/]\n")
-            table = Table(box=box.ROUNDED, border_style="dim", show_header=False, padding=(0, 2))
-            table.add_column("Key", style="bold bright_white", width=5)
-            table.add_column("Template", width=22)
-            table.add_column("Description", style="dim")
-            
-            template_keys = list(self.template_manager.templates.keys())
-            for i, key in enumerate(template_keys, 1):
-                t = self.template_manager.templates[key]
-                table.add_row(f"[{t.color}]{i}[/]", f"{t.icon} [{t.color}]{t.name}[/]", t.description)
-            table.add_row("[red]b[/]", "🔙 [red]Back[/]", "Return to main menu")
-            console.print(table)
-            console.print()
-            choice = Prompt.ask("[bold]Select template[/]", default="b")
-        else:
-            print("\nCustom Templates:\n")
-            template_keys = list(self.template_manager.templates.keys())
-            for i, key in enumerate(template_keys, 1):
-                t = self.template_manager.templates[key]
-                print(f"  [{i}] {t.icon} {t.name:<20} - {t.description}")
-            print("  [b] 🔙 Back")
-            choice = input("\nSelect template: ").strip()
+        # Execute the templates feature through the discovery system
+        result = self.cli_integration.execute_feature_sync(templates_feature)
         
-        if choice.lower() == 'b':
-            return
-        
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(template_keys):
-                key = template_keys[idx]
-                self._fill_template(key)
-        except ValueError:
-            pass
-
-    def _fill_template(self, template_key: str):
-        """Fill in a template's variables and generate prompt."""
-        template = self.template_manager.get_template(template_key)
-        if not template:
-            return
-        
-        if RICH_AVAILABLE:
-            console.print(Panel(
-                f"[bold]{template.name}[/]\n[dim]{template.description}[/]",
-                border_style=template.color,
-                box=box.ROUNDED
-            ))
-        
-        # Gather variables
-        variables = {}
-        for var in template.variables:
+        if not result.success and result.error:
             if RICH_AVAILABLE:
-                value = Prompt.ask(f"[bold {template.color}]{var}[/]")
+                console.print(f"[red]Error: {result.error}[/]")
             else:
-                value = input(f"{var}: ").strip()
-            variables[var] = value
-        
-        # Build prompt
-        result = self.template_manager.build_prompt(template_key, variables)
-        
-        self._display_result(result, template.color)
-        
-        # Save to history
-        tags = self._ask_tags()
-        prompt_id = self.history.save(
-            technique=f"template:{template_key}",
-            task=variables.get('task', template.name),
-            prompt=result,
-            tags=tags
-        )
-        
-        if RICH_AVAILABLE:
-            console.print(f"[dim]💾 Auto-saved to history (ID: {prompt_id})[/]")
-        
-        self._prompt_actions(prompt_id, result, template.color)
+                print(f"Error: {result.error}")
 
     def _show_main_menu(self) -> str:
         """Show main menu and return selected action."""
@@ -492,21 +418,35 @@ class InteractivePromptBuilder:
             else:
                 break
 
-    def _browse_history(self):
-        """Browse recent prompts."""
-        prompts = self.history.list_recent(15)
-        if not prompts:
-            if RICH_AVAILABLE:
-                console.print("[dim]No prompts in history yet.[/]\n")
-            else:
-                print("No prompts in history yet.\n")
+    def _browse_history(self) -> None:
+        """Browse recent prompts via the discovery system."""
+        # Get the history feature from the registry
+        history_feature = self.registry.get("history")
+        if history_feature is None:
+            # Fallback to direct history access
+            prompts = self.history.list_recent(15)
+            if not prompts:
+                if RICH_AVAILABLE:
+                    console.print("[dim]No prompts in history yet.[/]\n")
+                else:
+                    print("No prompts in history yet.\n")
+                return
+            self._display_prompt_list(prompts, "📜 Recent Prompts")
+            self._select_from_list(prompts)
             return
         
-        self._display_prompt_list(prompts, "📜 Recent Prompts")
-        self._select_from_list(prompts)
+        # Execute the history feature through the discovery system
+        result = self.cli_integration.execute_feature_sync(history_feature)
+        
+        if not result.success and result.error:
+            if RICH_AVAILABLE:
+                console.print(f"[red]Error: {result.error}[/]")
+            else:
+                print(f"Error: {result.error}")
 
-    def _browse_favorites(self):
+    def _browse_favorites(self) -> None:
         """Browse favorite prompts."""
+        # Use direct history access for favorites (quick access)
         prompts = self.history.list_favorites()
         if not prompts:
             if RICH_AVAILABLE:
@@ -518,7 +458,7 @@ class InteractivePromptBuilder:
         self._display_prompt_list(prompts, "⭐ Favorite Prompts")
         self._select_from_list(prompts)
 
-    def _search_prompts(self):
+    def _search_prompts(self) -> None:
         """Search saved prompts."""
         if RICH_AVAILABLE:
             query = Prompt.ask("[bold magenta]🔍 Search[/]")
@@ -560,7 +500,7 @@ class InteractivePromptBuilder:
                 task_preview = p.task[:40] + "..." if len(p.task) > 40 else p.task
                 print(f"{i}. {fav} [{p.technique}] {task_preview}")
 
-    def _select_from_list(self, prompts: list[SavedPrompt]):
+    def _select_from_list(self, prompts: list[SavedPrompt]) -> None:
         """Let user select a prompt from the list."""
         if RICH_AVAILABLE:
             choice = Prompt.ask("\n[bold]Select #[/] [dim](or Enter to go back)[/]", default="")
@@ -577,7 +517,7 @@ class InteractivePromptBuilder:
         except ValueError:
             pass
 
-    def _view_prompt(self, saved: SavedPrompt):
+    def _view_prompt(self, saved: SavedPrompt) -> None:
         """View a saved prompt with actions."""
         color = "cyan"
         for ptype, _, _, c, _ in self.TECHNIQUES:
@@ -631,7 +571,7 @@ class InteractivePromptBuilder:
             elif action == "b":
                 break
 
-    def _save_to_file(self, prompt: str, technique: str = "unknown", task: str = ""):
+    def _save_to_file(self, prompt: str, technique: str = "unknown", task: str = "") -> None:
         """Save prompt to file with format selection."""
         # Show format options
         if RICH_AVAILABLE:
@@ -689,7 +629,7 @@ class InteractivePromptBuilder:
         else:
             print(f"✅ Exported to {filename}")
 
-    def _show_header(self):
+    def _show_header(self) -> None:
         """Display the application header."""
         if RICH_AVAILABLE:
             header = Text()
@@ -702,7 +642,7 @@ class InteractivePromptBuilder:
             print("⚡ PROMPT BUILDER - Prompt Engineering Techniques")
             print("=" * 50 + "\n")
 
-    def _show_goodbye(self):
+    def _show_goodbye(self) -> None:
         """Display goodbye message."""
         if RICH_AVAILABLE:
             console.print(Panel(
@@ -784,7 +724,7 @@ class InteractivePromptBuilder:
 
         return config
 
-    def _show_live_preview(self, prompt_type: PromptType, config: PromptConfig, color: str):
+    def _show_live_preview(self, prompt_type: PromptType, config: PromptConfig, color: str) -> None:
         """Show a live preview of the prompt being built."""
         preview = self.builder.build(prompt_type, config)
         token_count = self.token_counter.count_tokens(preview)
@@ -806,7 +746,7 @@ class InteractivePromptBuilder:
             print(preview_text)
             print("---")
 
-    def _toggle_preview_mode(self):
+    def _toggle_preview_mode(self) -> None:
         """Toggle live preview mode."""
         self.preview_mode = not self.preview_mode
         status = "ON" if self.preview_mode else "OFF"
@@ -882,7 +822,7 @@ class InteractivePromptBuilder:
 
         return constraints
 
-    def _display_result(self, prompt: str, color: str):
+    def _display_result(self, prompt: str, color: str) -> None:
         """Display the generated prompt with token estimates."""
         if RICH_AVAILABLE:
             console.print()
@@ -903,7 +843,7 @@ class InteractivePromptBuilder:
             print("=" * 50)
             self._show_token_estimates(prompt)
 
-    def _show_token_estimates(self, prompt: str):
+    def _show_token_estimates(self, prompt: str) -> None:
         """Display token count and cost estimates for available providers only."""
         available_providers = self.api_config.get_available_providers()
         
@@ -954,10 +894,14 @@ class InteractivePromptBuilder:
 
     # ==================== AI FEATURES ====================
 
-    def _select_model_for_feature(self, feature_name: str = "this feature") -> tuple[str, str]:
+    def _select_model_for_feature(self, feature_name: str = "this feature") -> tuple[Optional[str], Optional[str]]:
         """Prompt user to select a model if multiple providers are available.
         
-        Returns (provider, model) tuple.
+        Args:
+            feature_name: Name of the feature for display purposes
+            
+        Returns:
+            Tuple of (provider, model) or (None, None) if no providers available
         """
         # If only one provider or no multiple providers, use default
         if not self.api_config.has_multiple_providers():
@@ -985,7 +929,7 @@ class InteractivePromptBuilder:
         
         return default_provider, default_model
 
-    def _ai_features_menu(self):
+    def _ai_features_menu(self) -> None:
         """Show AI-powered features menu using the discovery system.
         
         Requirements: 5.1, 5.4
@@ -1043,376 +987,9 @@ class InteractivePromptBuilder:
                     else:
                         print(f"Error: {result.error}")
 
-    def _generate_from_description(self):
-        """Generate a prompt from natural language description."""
-        import asyncio
-        
-        if RICH_AVAILABLE:
-            console.print(Panel(
-                "[bold]Describe what you want to accomplish[/]\n[dim]I'll generate the optimal prompt for you[/]",
-                border_style="cyan"
-            ))
-            description = Prompt.ask("\n[bold cyan]📝 What do you want to do?[/]")
-            context = Prompt.ask("[dim]Additional context (optional)[/]", default="")
-        else:
-            print("\n🪄 Generate from Description")
-            description = input("What do you want to do?\n> ").strip()
-            context = input("Additional context (optional): ").strip()
-
-        # Select model if multiple providers available
-        provider, model = self._select_model_for_feature("prompt generation")
-
-        if RICH_AVAILABLE:
-            with console.status(f"[bold cyan]Generating prompt using {model}...[/]"):
-                result = asyncio.run(self.nl_generator.generate(description, context, provider=provider, model=model))
-        else:
-            print(f"Generating using {model}...")
-            result = asyncio.run(self.nl_generator.generate(description, context, provider=provider, model=model))
-
-        if result.error:
-            if RICH_AVAILABLE:
-                console.print(f"[red]Error: {result.error}[/]")
-            else:
-                print(f"Error: {result.error}")
-            return
-
-        if RICH_AVAILABLE:
-            console.print(f"\n[dim]Technique: [cyan]{result.technique}[/] (confidence: {result.confidence:.0%})[/]")
-            console.print(f"[dim]{result.explanation}[/]\n")
-        
-        self._display_result(result.prompt, "cyan")
-        
-        # Save to history
-        tags = self._ask_tags()
-        prompt_id = self.history.save(
-            technique=f"generated:{result.technique}",
-            task=description,
-            prompt=result.prompt,
-            tags=tags
-        )
-        self._prompt_actions(prompt_id, result.prompt, "cyan")
-
-    def _optimize_prompt(self):
-        """Optimize an existing prompt using AI."""
-        import asyncio
-        
-        if RICH_AVAILABLE:
-            console.print(Panel(
-                "[bold]Paste your prompt to optimize[/]",
-                border_style="green"
-            ))
-            prompt = Prompt.ask("\n[bold green]📝 Your prompt[/]")
-            context = Prompt.ask("[dim]What's this prompt for? (optional)[/]", default="")
-        else:
-            print("\n✨ Optimize Prompt")
-            prompt = input("Your prompt:\n> ").strip()
-            context = input("What's this for? (optional): ").strip()
-
-        # Select model if multiple providers available
-        provider, model = self._select_model_for_feature("prompt optimization")
-
-        if RICH_AVAILABLE:
-            with console.status(f"[bold green]Analyzing and optimizing using {model}...[/]"):
-                result = asyncio.run(self.optimizer.optimize(prompt, context, provider=provider, model=model))
-        else:
-            print(f"Optimizing using {model}...")
-            result = asyncio.run(self.optimizer.optimize(prompt, context, provider=provider, model=model))
-
-        if result.error:
-            if RICH_AVAILABLE:
-                console.print(f"[red]Error: {result.error}[/]")
-            else:
-                print(f"Error: {result.error}")
-            return
-
-        # Show scores
-        if RICH_AVAILABLE:
-            console.print("\n[bold]📊 Analysis Scores:[/]")
-            console.print(f"  Clarity:       [cyan]{'█' * result.clarity_score}{'░' * (10-result.clarity_score)}[/] {result.clarity_score}/10")
-            console.print(f"  Specificity:   [green]{'█' * result.specificity_score}{'░' * (10-result.specificity_score)}[/] {result.specificity_score}/10")
-            console.print(f"  Effectiveness: [yellow]{'█' * result.effectiveness_score}{'░' * (10-result.effectiveness_score)}[/] {result.effectiveness_score}/10")
-            
-            if result.suggestions:
-                console.print("\n[bold]💡 Suggestions:[/]")
-                for s in result.suggestions:
-                    console.print(f"  • {s}")
-            
-            console.print(f"\n[dim]{result.explanation}[/]")
-        else:
-            print(f"\nScores: Clarity={result.clarity_score}/10, Specificity={result.specificity_score}/10, Effectiveness={result.effectiveness_score}/10")
-            if result.suggestions:
-                print("\nSuggestions:")
-                for s in result.suggestions:
-                    print(f"  • {s}")
-
-        self._display_result(result.optimized_prompt, "green")
-        
-        tags = self._ask_tags()
-        prompt_id = self.history.save(
-            technique="optimized",
-            task="Optimized prompt",
-            prompt=result.optimized_prompt,
-            tags=tags
-        )
-        self._prompt_actions(prompt_id, result.optimized_prompt, "green")
-
-    def _test_prompt(self):
-        """Test a prompt against selected models."""
-        import asyncio
-        
-        if RICH_AVAILABLE:
-            console.print(Panel(
-                "[bold]Test your prompt across different models[/]",
-                border_style="yellow"
-            ))
-            prompt = Prompt.ask("\n[bold yellow]📝 Prompt to test[/]")
-        else:
-            print("\n🧪 Test Prompt")
-            prompt = input("Prompt to test:\n> ").strip()
-
-        # Get available models
-        available = self.api_config.get_available_models()
-        if not available:
-            if RICH_AVAILABLE:
-                console.print("[red]No models available[/]")
-            else:
-                print("No models available")
-            return
-
-        # Let user select which models to test
-        model_options = [f"{provider}: {model}" for provider, model in available]
-        
-        if RICH_AVAILABLE:
-            console.print("\n[bold]Select models to test[/] [dim](Space to select, Enter to confirm)[/]\n")
-        else:
-            print("\nSelect models to test (space-separated numbers):\n")
-        
-        selected_indices = interactive_select(model_options, title="", multi_select=True)
-        
-        if not selected_indices:
-            if RICH_AVAILABLE:
-                console.print("[yellow]No models selected[/]")
-            else:
-                print("No models selected")
-            return
-        
-        selected_models = [available[i] for i in selected_indices if i < len(available)]
-        
-        if not selected_models:
-            return
-
-        # Run tests
-        if RICH_AVAILABLE:
-            console.print(f"\n[dim]Testing {len(selected_models)} model(s)...[/]")
-            with console.status("[bold yellow]Running tests...[/]"):
-                results = []
-                for provider, model in selected_models:
-                    response = asyncio.run(self.llm_client.complete(prompt, provider, model, max_tokens=500))
-                    results.append((provider, model, response))
-        else:
-            print(f"\nTesting {len(selected_models)} model(s)...")
-            results = []
-            for provider, model in selected_models:
-                response = asyncio.run(self.llm_client.complete(prompt, provider, model, max_tokens=500))
-                results.append((provider, model, response))
-
-        # Display results
-        if RICH_AVAILABLE:
-            console.print("\n[bold]📊 Results:[/]\n")
-            for provider, model, response in results:
-                if response.error:
-                    console.print(f"[red]{provider}/{model}: Error - {response.error}[/]")
-                else:
-                    preview = response.content[:200] + "..." if len(response.content) > 200 else response.content
-                    console.print(Panel(
-                        preview,
-                        title=f"[bold]{provider}/{model}[/]",
-                        subtitle=f"[dim]{response.input_tokens + response.output_tokens} tokens[/]",
-                        border_style="dim"
-                    ))
-        else:
-            for provider, model, response in results:
-                print(f"\n--- {provider}/{model} ---")
-                if response.error:
-                    print(f"Error: {response.error}")
-                else:
-                    print(response.content[:300])
-
-    def _prompt_chains_menu(self):
-        """Manage and execute prompt chains."""
-        import asyncio
-        
-        while True:
-            chains = list(self.chain_executor.chains.keys()) + list(BUILTIN_CHAINS.keys())
-            
-            if RICH_AVAILABLE:
-                console.print("\n[bold magenta]⛓️ Prompt Chains[/]\n")
-                table = Table(box=box.ROUNDED, border_style="dim", show_header=False)
-                table.add_column("Key", width=5)
-                table.add_column("Action", width=30)
-                
-                for i, name in enumerate(chains[:5], 1):
-                    chain = self.chain_executor.get_chain(name) or BUILTIN_CHAINS.get(name)
-                    desc = chain.description[:30] if chain else ""
-                    table.add_row(f"[cyan]{i}[/]", f"▶️  {name} [dim]- {desc}[/]")
-                
-                table.add_row("[green]n[/]", "➕ [green]Create new chain[/]")
-                table.add_row("[red]b[/]", "🔙 [red]Back[/]")
-                console.print(table)
-                choice = Prompt.ask("\n[bold]Select[/]", default="b")
-            else:
-                print("\n⛓️ Prompt Chains:\n")
-                for i, name in enumerate(chains[:5], 1):
-                    print(f"  [{i}] {name}")
-                print("  [n] Create new chain")
-                print("  [b] Back")
-                choice = input("\nSelect: ").strip().lower()
-
-            if choice == "b":
-                break
-            elif choice == "n":
-                self._create_chain()
-            else:
-                try:
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(chains):
-                        self._execute_chain(chains[idx])
-                except ValueError:
-                    pass
-
-    def _execute_chain(self, chain_name: str):
-        """Execute a prompt chain."""
-        import asyncio
-        
-        chain = self.chain_executor.get_chain(chain_name) or BUILTIN_CHAINS.get(chain_name)
-        if not chain:
-            return
-
-        if RICH_AVAILABLE:
-            console.print(Panel(
-                f"[bold]{chain.name}[/]\n[dim]{chain.description}[/]\n\nSteps: {len(chain.steps)}",
-                border_style="magenta"
-            ))
-        
-        # Gather input context
-        input_context = {}
-        if RICH_AVAILABLE:
-            console.print("\n[bold]Provide input values:[/]")
-        
-        # Find variables in first step
-        first_step = chain.steps[0].prompt_template
-        import re
-        vars_found = set(re.findall(r'\{(\w+)\}', first_step))
-        
-        for var in vars_found:
-            if RICH_AVAILABLE:
-                input_context[var] = Prompt.ask(f"[cyan]{var}[/]")
-            else:
-                input_context[var] = input(f"{var}: ").strip()
-
-        # Execute
-        if RICH_AVAILABLE:
-            with console.status("[bold magenta]Executing chain...[/]"):
-                result = asyncio.run(self.chain_executor.execute(chain, input_context))
-        else:
-            print("Executing...")
-            result = asyncio.run(self.chain_executor.execute(chain, input_context))
-
-        # Show results
-        if RICH_AVAILABLE:
-            status = "[green]✓ Success[/]" if result.success else "[red]✗ Failed[/]"
-            console.print(f"\n{status} - {result.steps_completed}/{result.total_steps} steps")
-            console.print(f"[dim]Tokens: {result.total_tokens} | Latency: {result.total_latency_ms}ms[/]")
-            
-            if result.errors:
-                for err in result.errors:
-                    console.print(f"[red]  {err}[/]")
-            
-            if result.final_output:
-                console.print(Panel(result.final_output, title="[bold]Final Output[/]", border_style="green"))
-        else:
-            print(f"\n{'Success' if result.success else 'Failed'} - {result.steps_completed}/{result.total_steps} steps")
-            if result.final_output:
-                print(f"\nOutput:\n{result.final_output}")
-
-    def _create_chain(self):
-        """Create a new prompt chain."""
-        if RICH_AVAILABLE:
-            name = Prompt.ask("[bold]Chain name[/]")
-            description = Prompt.ask("[dim]Description[/]", default="")
-        else:
-            name = input("Chain name: ").strip()
-            description = input("Description: ").strip()
-
-        steps = []
-        if RICH_AVAILABLE:
-            console.print("\n[dim]Add steps (type 'done' when finished)[/]")
-        
-        while True:
-            if RICH_AVAILABLE:
-                step_name = Prompt.ask(f"\n[bold]Step {len(steps)+1} name[/] [dim](or 'done')[/]")
-            else:
-                step_name = input(f"\nStep {len(steps)+1} name (or 'done'): ").strip()
-            
-            if step_name.lower() == 'done':
-                break
-            
-            if RICH_AVAILABLE:
-                prompt_template = Prompt.ask("[cyan]Prompt template[/]")
-                output_key = Prompt.ask("[dim]Output variable name[/]", default=f"step{len(steps)+1}_output")
-            else:
-                prompt_template = input("Prompt template: ").strip()
-                output_key = input("Output variable name: ").strip() or f"step{len(steps)+1}_output"
-            
-            steps.append(ChainStep(
-                name=step_name,
-                prompt_template=prompt_template,
-                output_key=output_key
-            ))
-
-        if steps:
-            self.chain_executor.create_chain(name, description, steps)
-            if RICH_AVAILABLE:
-                console.print(f"[green]✓ Chain '{name}' created with {len(steps)} steps[/]")
-            else:
-                print(f"Chain '{name}' created!")
-
-    def _show_analytics(self):
-        """Show usage analytics."""
-        summary = self.analytics.get_summary(30)
-        
-        if RICH_AVAILABLE:
-            console.print("\n[bold white]📊 Analytics (Last 30 Days)[/]\n")
-            
-            # Stats
-            table = Table(box=box.SIMPLE, show_header=False)
-            table.add_column("Metric", style="dim")
-            table.add_column("Value", style="bold")
-            table.add_row("Total Prompts", str(summary.total_prompts))
-            table.add_row("Total Tokens", f"{summary.total_tokens:,}")
-            table.add_row("Total Cost", f"${summary.total_cost:.2f}")
-            table.add_row("Avg Latency", f"{summary.avg_latency_ms:.0f}ms")
-            table.add_row("Success Rate", f"{summary.success_rate:.1f}%")
-            console.print(table)
-            
-            if summary.top_techniques:
-                console.print("\n[bold]Top Techniques:[/]")
-                for tech, count in summary.top_techniques[:5]:
-                    console.print(f"  {tech}: [cyan]{count}[/]")
-            
-            if summary.cost_by_provider:
-                console.print("\n[bold]Cost by Provider:[/]")
-                for provider, cost in summary.cost_by_provider.items():
-                    console.print(f"  {provider}: [green]${cost:.2f}[/]")
-        else:
-            print("\n📊 Analytics (Last 30 Days)")
-            print(f"  Prompts: {summary.total_prompts}")
-            print(f"  Tokens: {summary.total_tokens:,}")
-            print(f"  Cost: ${summary.total_cost:.2f}")
-
     # ==================== SETTINGS ====================
 
-    def _settings_menu(self):
+    def _settings_menu(self) -> None:
         """Settings and configuration menu."""
         while True:
             default_provider, default_model = self.api_config.get_default_model()
@@ -1455,7 +1032,7 @@ class InteractivePromptBuilder:
             elif idx == 3:
                 self._set_default_model()
 
-    def _set_default_model(self):
+    def _set_default_model(self) -> None:
         """Set the default model for AI features."""
         available_models = self.api_config.get_available_models()
         
@@ -1498,17 +1075,17 @@ class InteractivePromptBuilder:
         if idx is not None and 0 <= idx < len(available_models):
             provider, model = available_models[idx]
             self.api_config.set_default_model(provider, model)
-            # Reinitialize client
+            # Reinitialize LLM client with new config
             self.llm_client = LLMClient(self.api_config)
-            self.optimizer = PromptOptimizer(self.llm_client)
-            self.nl_generator = NaturalLanguageGenerator(self.llm_client)
+            # Update CLI integration context
+            self.cli_integration.context.llm_client = self.llm_client
             
             if RICH_AVAILABLE:
                 console.print(f"\n[green]✓ Default set to {provider} / {model}[/]")
             else:
                 print(f"\n✓ Default set to {provider} / {model}")
 
-    def _set_api_key(self, provider: str):
+    def _set_api_key(self, provider: str) -> None:
         """Set API key for a provider."""
         if RICH_AVAILABLE:
             key = Prompt.ask(f"[bold]Enter {provider.capitalize()} API key[/]", password=True)
@@ -1517,10 +1094,10 @@ class InteractivePromptBuilder:
         
         if key:
             self.api_config.set_api_key(provider, key)
-            # Reinitialize client
+            # Reinitialize LLM client with new config
             self.llm_client = LLMClient(self.api_config)
-            self.optimizer = PromptOptimizer(self.llm_client)
-            self.nl_generator = NaturalLanguageGenerator(self.llm_client)
+            # Update CLI integration context
+            self.cli_integration.context.llm_client = self.llm_client
             
             if RICH_AVAILABLE:
                 console.print(f"[green]✓ {provider.capitalize()} API key saved[/]")
