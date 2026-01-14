@@ -195,8 +195,4 @@ Templates are loaded when the application starts. To reload after editing:
 
 ## Sharing Templates
 
-Share your templates by:
-
-1. Copying your `templates.yaml` file
-2. Sharing the YAML content
-3. Others paste into their `~/.promptbuilder/templates.yaml`
+Share your templates by copying your `templates.yaml` file to others. They can paste the content into their `~/.promptbuilder/templates.yaml`.

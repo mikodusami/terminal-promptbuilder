@@ -282,39 +282,6 @@ print(f"Total cost: ${summary.total_cost:.2f}")
 json_data = analytics.export_data(days=30)
 ```
 
-### Sharing
-
-```python
-from src.contrib.sharing.service import SharingService
-from src.contrib.sharing.common import SharedPrompt
-
-sharing = SharingService()
-
-# Create library
-prompts = [
-    SharedPrompt(
-        id="",
-        name="Code Review",
-        technique="role",
-        prompt="You are a senior developer...",
-        tags=["python"]
-    )
-]
-
-library = sharing.create_library(
-    name="My Prompts",
-    description="Collection of useful prompts",
-    prompts=prompts
-)
-
-# Export
-path = sharing.export_library(library)
-share_code = sharing.generate_share_code(library)
-
-# Import
-imported = sharing.import_from_share_code(share_code)
-```
-
 ## Integration Example
 
 Complete example integrating multiple services:

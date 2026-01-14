@@ -11,11 +11,10 @@ Complete documentation for all user flows and features in Prompt Builder.
 5. [History & Favorites](./05-history-favorites.md)
 6. [AI Features](./06-ai-features.md)
 7. [Prompt Chains](./07-prompt-chains.md)
-8. [Sharing & Libraries](./08-sharing-libraries.md)
-9. [Analytics](./09-analytics.md)
-10. [Settings & Configuration](./10-settings-configuration.md)
-11. [Export Formats](./11-export-formats.md)
-12. [Programmatic Usage](./12-programmatic-usage.md)
+8. [Analytics](./09-analytics.md)
+9. [Settings & Configuration](./10-settings-configuration.md)
+10. [Export Formats](./11-export-formats.md)
+11. [Programmatic Usage](./12-programmatic-usage.md)
 
 ## Quick Reference
 
