@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="testing",
-    display_name="Prompt Testing",
-    description="Test prompts across multiple LLM models",
+    display_name="Test Prompt",
+    description="Test prompts across multiple models",
     icon="🧪",
     color="red",
     category=FeatureCategory.AI,
     requires_api_key=True,
-    menu_key="x",
+    menu_order=52,
 )
 
 

@@ -16,11 +16,11 @@ MANIFEST = FeatureManifest(
     name="chains",
     display_name="Prompt Chains",
     description="Execute multi-step prompt workflows",
-    icon="🔗",
+    icon="⛓️",
     color="magenta",
     category=FeatureCategory.AI,
     requires_api_key=True,
-    menu_key="c",
+    menu_order=53,
 )
 
 

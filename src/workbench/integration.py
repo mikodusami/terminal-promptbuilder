@@ -33,8 +33,8 @@ class CLIIntegration:
         FeatureCategory.CORE: ("Core Features", "bright_white"),
         FeatureCategory.AI: ("AI Features", "bright_magenta"),
         FeatureCategory.STORAGE: ("Storage", "bright_blue"),
-        FeatureCategory.EXPORT: ("Export & Share", "bright_green"),
         FeatureCategory.UTILITY: ("Utilities", "bright_yellow"),
+        FeatureCategory.SYSTEM: ("System", "dim"),
     }
 
     def __init__(

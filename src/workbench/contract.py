@@ -18,11 +18,11 @@ class FeatureCategory(Enum):
     
     Requirements: 9.1
     """
-    CORE = "core"           # Core prompt building features
+    CORE = "core"           # Core prompt building features (New Prompt, Combine)
     AI = "ai"               # AI-powered features (require API key)
-    STORAGE = "storage"     # History, favorites, persistence
-    EXPORT = "export"       # Export and sharing features
-    UTILITY = "utility"     # Miscellaneous utilities
+    STORAGE = "storage"     # History, favorites, search, persistence
+    UTILITY = "utility"     # Templates, variables, preview mode
+    SYSTEM = "system"       # Settings, quit - always shown last
 
 
 @dataclass
@@ -60,6 +60,7 @@ class FeatureManifest:
     dependencies: list[str] = field(default_factory=list)
     enabled: bool = True
     menu_key: Optional[str] = None
+    menu_order: int = 50                # Lower numbers appear first (0-100)
 
 
 @dataclass
@@ -74,6 +75,9 @@ class FeatureContext:
     config: Any                         # APIConfig instance
     analytics: Any                      # PromptAnalytics instance
     prompt_builder: Any                 # Core PromptBuilder instance
+    token_counter: Any = None           # TokenCounter instance
+    preview_mode: bool = False          # Whether preview mode is enabled
+    app_state: Any = None               # Reference to app state for updates
 
 
 @dataclass

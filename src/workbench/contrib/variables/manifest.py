@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="variables",
-    display_name="Variable Templates",
-    description="Create and use templates with dynamic variables",
+    display_name="Variables",
+    description="Variable interpolation in prompts",
     icon="🔤",
     color="bright_cyan",
     category=FeatureCategory.UTILITY,
     requires_api_key=False,
-    menu_key="v",
+    menu_order=21,
 )
 
 

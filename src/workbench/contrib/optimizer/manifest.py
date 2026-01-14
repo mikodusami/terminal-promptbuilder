@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="optimizer",
-    display_name="Prompt Optimizer",
+    display_name="Optimize Prompt",
     description="AI-powered prompt analysis and improvement",
-    icon="🔧",
+    icon="✨",
     color="cyan",
     category=FeatureCategory.AI,
     requires_api_key=True,
-    menu_key="o",
+    menu_order=50,
 )
 
 

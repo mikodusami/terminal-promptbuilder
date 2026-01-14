@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="history",
-    display_name="Prompt History",
-    description="View and manage saved prompts and favorites",
+    display_name="History",
+    description="Browse recent prompts",
     icon="📜",
     color="blue",
     category=FeatureCategory.STORAGE,
     requires_api_key=False,
-    menu_key="h",
+    menu_order=30,
 )
 
 

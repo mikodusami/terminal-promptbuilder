@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="analytics",
-    display_name="Analytics Dashboard",
-    description="View prompt usage statistics and insights",
+    display_name="Analytics",
+    description="View usage statistics",
     icon="📊",
     color="yellow",
     category=FeatureCategory.UTILITY,
     requires_api_key=False,
-    menu_key="a",
+    menu_order=60,
 )
 
 

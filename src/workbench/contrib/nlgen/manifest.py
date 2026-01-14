@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="nlgen",
-    display_name="Natural Language Generator",
-    description="Generate optimized prompts from plain English descriptions",
-    icon="💬",
+    display_name="Generate from Description",
+    description="Generate prompts from plain English",
+    icon="🪄",
     color="bright_magenta",
     category=FeatureCategory.AI,
     requires_api_key=True,
-    menu_key="n",
+    menu_order=51,
 )
 
 

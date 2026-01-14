@@ -193,11 +193,11 @@ class TestFeatureCategoryProperty:
         Feature: contrib-discovery, Property 1: Manifest Field Validation
         
         The FeatureCategory enum must define all standard categories:
-        core, ai, storage, export, utility.
+        core, ai, storage, utility, system.
         
         Validates: Requirements 9.1
         """
-        expected_categories = {"core", "ai", "storage", "export", "utility"}
+        expected_categories = {"core", "ai", "storage", "utility", "system"}
         actual_categories = {cat.value for cat in FeatureCategory}
         
         assert expected_categories == actual_categories

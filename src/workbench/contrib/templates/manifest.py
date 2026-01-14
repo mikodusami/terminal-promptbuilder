@@ -14,13 +14,13 @@ from src.workbench.contract import (
 
 MANIFEST = FeatureManifest(
     name="templates",
-    display_name="Custom Templates",
-    description="Manage and use custom prompt templates",
-    icon="📋",
+    display_name="Templates",
+    description="Use custom prompt templates",
+    icon="📦",
     color="green",
-    category=FeatureCategory.CORE,
+    category=FeatureCategory.UTILITY,
     requires_api_key=False,
-    menu_key="t",
+    menu_order=20,
 )
 
 

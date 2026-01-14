@@ -242,7 +242,7 @@ class TestManifestCategoryDistribution:
             "history": FeatureCategory.STORAGE,
             "optimizer": FeatureCategory.AI,
             "chains": FeatureCategory.AI,
-            "templates": FeatureCategory.CORE,
+            "templates": FeatureCategory.UTILITY,
             "analytics": FeatureCategory.UTILITY,
             "testing": FeatureCategory.AI,
             "nlgen": FeatureCategory.AI,
