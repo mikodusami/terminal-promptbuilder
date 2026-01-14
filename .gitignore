@@ -42,6 +42,7 @@ env/
 htmlcov/
 .tox/
 .nox/
+.hypothesis/
 
 # Local data (user-specific)
 *.db
