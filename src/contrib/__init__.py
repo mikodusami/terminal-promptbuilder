@@ -12,9 +12,7 @@ FEATURES = [
     "optimizer",
     "testing",
     "chains",
-    "sharing",
     "analytics",
     "nlgen",
     "variables",
-    "plugins",
 ]

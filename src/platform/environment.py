@@ -27,13 +27,6 @@ def get_data_dir() -> Path:
     return get_config_dir()
 
 
-def get_plugins_dir() -> Path:
-    """Get the plugins directory path."""
-    plugins_dir = get_config_dir() / "plugins"
-    plugins_dir.mkdir(parents=True, exist_ok=True)
-    return plugins_dir
-
-
 def get_env(key: str, default: str = None) -> str | None:
     """Get environment variable."""
     return os.getenv(key, default)

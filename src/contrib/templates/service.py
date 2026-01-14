@@ -67,7 +67,7 @@ class TemplateService:
         self._ensure_config_exists()
         self.templates = self._load_templates()
 
-    def _ensure_config_exists(self):
+    def _ensure_config_exists(self) -> None:
         if not Path(self.config_path).exists():
             with open(self.config_path, 'w') as f:
                 f.write(DEFAULT_TEMPLATES)

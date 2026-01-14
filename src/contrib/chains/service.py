@@ -21,7 +21,7 @@ class ChainService:
         self.chains: dict[str, PromptChain] = {}
         self._load_chains()
 
-    def _load_chains(self):
+    def _load_chains(self) -> None:
         config_path = get_config_dir() / "chains.json"
         if config_path.exists():
             try:

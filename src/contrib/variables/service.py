@@ -6,8 +6,9 @@ Feature #4: Variable Interpolation System
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
-from pathlib import Path
 import json
+
+from ...platform.environment import get_config_dir
 
 
 @dataclass
@@ -39,9 +40,9 @@ class VariableInterpolator:
         self.templates: dict[str, VariableTemplate] = {}
         self._load_templates()
 
-    def _load_templates(self):
+    def _load_templates(self) -> None:
         """Load saved templates from config."""
-        config_path = Path.home() / ".promptbuilder" / "variable_templates.json"
+        config_path = get_config_dir() / "variable_templates.json"
         if config_path.exists():
             try:
                 with open(config_path) as f:
@@ -60,8 +61,7 @@ class VariableInterpolator:
 
     def save_templates(self):
         """Save templates to config."""
-        config_path = Path.home() / ".promptbuilder" / "variable_templates.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path = get_config_dir() / "variable_templates.json"
         
         data = {}
         for name, tpl in self.templates.items():

@@ -6,9 +6,10 @@ Feature #8: Prompt Analytics Dashboard
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 import json
+
+from ...platform.environment import get_config_dir
 
 
 @dataclass
@@ -44,14 +45,12 @@ class PromptAnalytics:
 
     def __init__(self, db_path: str = None):
         if db_path is None:
-            config_dir = Path.home() / ".promptbuilder"
-            config_dir.mkdir(exist_ok=True)
-            db_path = str(config_dir / "analytics.db")
+            db_path = str(get_config_dir() / "analytics.db")
         
         self.db_path = db_path
         self._init_db()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Initialize analytics database."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""

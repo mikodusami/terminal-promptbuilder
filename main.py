@@ -12,9 +12,7 @@ Techniques included:
 - ReAct (Reasoning + Acting)
 """
 
-from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
 try:
@@ -36,6 +34,7 @@ try:
 except ImportError:
     MENU_AVAILABLE = False
 
+from src.core import PromptBuilder, PromptConfig, PromptType
 from src.contrib.history.service import HistoryService as PromptHistory
 from src.contrib.history.common import SavedPrompt
 from src.contrib.templates.service import TemplateService as TemplateManager
@@ -52,13 +51,10 @@ from src.contrib.testing.common import TestCase, TestResult
 from src.contrib.chains.service import ChainService as ChainExecutor
 from src.contrib.chains.common import ChainStep, PromptChain, ChainResult
 from src.contrib.chains.builtin import BUILTIN_CHAINS
-from src.contrib.sharing.service import SharingService as PromptSharing
-from src.contrib.sharing.common import SharedPrompt, PromptLibrary
 from src.services.context import ContextManager
 from src.contrib.analytics.service import PromptAnalytics
 from src.contrib.nlgen.service import NaturalLanguageGenerator
 from src.contrib.variables.service import VariableInterpolator
-from src.contrib.plugins.service import PluginManager
 
 console = Console() if RICH_AVAILABLE else None
 
@@ -95,167 +91,6 @@ def interactive_select(options: list[str], title: str = "", multi_select: bool =
             return None
 
 
-class PromptType(Enum):
-    CHAIN_OF_THOUGHT = "cot"
-    FEW_SHOT = "few_shot"
-    ROLE_BASED = "role"
-    STRUCTURED = "structured"
-    REACT = "react"
-    TREE_OF_THOUGHTS = "tot"
-    SELF_CONSISTENCY = "self_consistency"
-
-
-@dataclass
-class PromptConfig:
-    task: str
-    context: str = ""
-    examples: list[dict] = field(default_factory=list)
-    role: str = ""
-    output_format: str = ""
-    constraints: list[str] = field(default_factory=list)
-    temperature_hint: str = "balanced"
-
-
-class PromptBuilder:
-    """Build prompts using various prompt engineering techniques."""
-
-    def __init__(self):
-        self.templates = {
-            PromptType.CHAIN_OF_THOUGHT: self._build_cot,
-            PromptType.FEW_SHOT: self._build_few_shot,
-            PromptType.ROLE_BASED: self._build_role_based,
-            PromptType.STRUCTURED: self._build_structured,
-            PromptType.REACT: self._build_react,
-            PromptType.TREE_OF_THOUGHTS: self._build_tot,
-            PromptType.SELF_CONSISTENCY: self._build_self_consistency,
-        }
-
-    def build(self, prompt_type: PromptType, config: PromptConfig) -> str:
-        """Build a prompt using the specified technique."""
-        builder = self.templates.get(prompt_type)
-        if not builder:
-            raise ValueError(f"Unknown prompt type: {prompt_type}")
-        return builder(config)
-
-    def _build_cot(self, config: PromptConfig) -> str:
-        """Chain of Thought - encourages step-by-step reasoning."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        prompt.append("Think through this step-by-step:")
-        prompt.append("1. First, identify the key elements of the problem")
-        prompt.append("2. Break down the problem into smaller parts")
-        prompt.append("3. Solve each part systematically")
-        prompt.append("4. Combine the solutions and verify the result")
-        prompt.append("\nLet's work through this carefully:")
-        if config.constraints:
-            prompt.append("\nConstraints to consider:")
-            for c in config.constraints:
-                prompt.append(f"- {c}")
-        return "\n".join(prompt)
-
-    def _build_few_shot(self, config: PromptConfig) -> str:
-        """Few-Shot Learning - provides examples to guide the model."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        if config.examples:
-            prompt.append("Here are some examples:\n")
-            for i, ex in enumerate(config.examples, 1):
-                prompt.append(f"Example {i}:")
-                prompt.append(f"Input: {ex.get('input', '')}")
-                prompt.append(f"Output: {ex.get('output', '')}\n")
-        prompt.append("Now, apply the same pattern to solve the following:")
-        return "\n".join(prompt)
-
-    def _build_role_based(self, config: PromptConfig) -> str:
-        """Role-Based - assigns a specific persona to the model."""
-        prompt = []
-        role = config.role or "expert assistant"
-        prompt.append(f"You are a {role}.\n")
-        if config.context:
-            prompt.append(f"Background: {config.context}\n")
-        prompt.append(f"Your task: {config.task}\n")
-        prompt.append("Approach this with your expertise, providing:")
-        prompt.append("- Professional insights")
-        prompt.append("- Practical recommendations")
-        prompt.append("- Clear explanations")
-        if config.constraints:
-            prompt.append("\nKeep in mind:")
-            for c in config.constraints:
-                prompt.append(f"- {c}")
-        return "\n".join(prompt)
-
-    def _build_structured(self, config: PromptConfig) -> str:
-        """Structured Output - requests specific format."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        output_format = config.output_format or "JSON"
-        prompt.append(f"Provide your response in {output_format} format.\n")
-        prompt.append("Structure your response with:")
-        prompt.append("- Clear sections/fields")
-        prompt.append("- Consistent formatting")
-        prompt.append("- Complete information")
-        if config.constraints:
-            prompt.append("\nRequirements:")
-            for c in config.constraints:
-                prompt.append(f"- {c}")
-        return "\n".join(prompt)
-
-    def _build_react(self, config: PromptConfig) -> str:
-        """ReAct - combines reasoning and acting."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        prompt.append("Use the ReAct framework to solve this:\n")
-        prompt.append("For each step, follow this pattern:")
-        prompt.append("Thought: [Your reasoning about what to do next]")
-        prompt.append("Action: [The action you decide to take]")
-        prompt.append("Observation: [What you observe from the action]")
-        prompt.append("... (repeat until solved)")
-        prompt.append("Final Answer: [Your conclusion]\n")
-        prompt.append("Begin your analysis:")
-        return "\n".join(prompt)
-
-    def _build_tot(self, config: PromptConfig) -> str:
-        """Tree of Thoughts - explores multiple reasoning paths."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        prompt.append("Explore this problem using Tree of Thoughts:\n")
-        prompt.append("1. Generate 3 different initial approaches")
-        prompt.append("2. For each approach, evaluate:")
-        prompt.append("   - Feasibility (1-10)")
-        prompt.append("   - Potential issues")
-        prompt.append("   - Expected outcome")
-        prompt.append("3. Select the most promising path")
-        prompt.append("4. Develop it further, backtracking if needed")
-        prompt.append("5. Present your final solution with reasoning\n")
-        prompt.append("Start by listing your three approaches:")
-        return "\n".join(prompt)
-
-    def _build_self_consistency(self, config: PromptConfig) -> str:
-        """Self-Consistency - generates multiple solutions and finds consensus."""
-        prompt = []
-        if config.context:
-            prompt.append(f"Context: {config.context}\n")
-        prompt.append(f"Task: {config.task}\n")
-        prompt.append("Apply self-consistency checking:\n")
-        prompt.append("1. Solve this problem 3 different ways")
-        prompt.append("2. For each solution, show your work")
-        prompt.append("3. Compare all solutions")
-        prompt.append("4. Identify the most consistent/reliable answer")
-        prompt.append("5. Explain why this answer is most trustworthy\n")
-        prompt.append("Solution 1:")
-        return "\n".join(prompt)
-
-
 class InteractivePromptBuilder:
     """Interactive CLI for building prompts with rich formatting."""
 
@@ -289,7 +124,6 @@ class InteractivePromptBuilder:
         self.optimizer = PromptOptimizer(self.llm_client)
         self.test_suite = PromptTestSuite(self.llm_client)
         self.chain_executor = ChainExecutor(self.llm_client)
-        self.sharing = PromptSharing()
         self.context_manager = ContextManager()
         self.analytics = PromptAnalytics()
         self.nl_generator = NaturalLanguageGenerator(self.llm_client)
@@ -422,7 +256,7 @@ class InteractivePromptBuilder:
         preview_status = "ON" if self.preview_mode else "OFF"
         
         menu_options = [
-            "✨ New Prompt         - Create a new prompt",
+            "✨ New Prompt         - Create a new prompt manually",
             "🔗 Combine            - Chain multiple techniques",
             "📦 Templates          - Use custom templates",
             "📜 History            - Browse recent prompts",
@@ -1139,11 +973,10 @@ class InteractivePromptBuilder:
             "✨ Optimize Prompt            - AI-powered prompt improvement",
             "🧪 Test Prompt                - Test against selected models",
             "⛓️  Prompt Chains              - Multi-step workflows",
-            "📤 Share & Import             - Export/import prompt libraries",
             "📊 Analytics                  - View usage statistics",
             "🔙 Back                       - Return to main menu",
         ]
-        actions = ["generate", "optimize", "test", "chains", "share", "analytics", "back"]
+        actions = ["generate", "optimize", "test", "chains", "analytics", "back"]
 
         while True:
             if RICH_AVAILABLE:
@@ -1151,7 +984,7 @@ class InteractivePromptBuilder:
             
             idx = interactive_select(menu_options, title="")
             
-            if idx is None or idx == 6:  # Back
+            if idx is None or idx == 5:  # Back
                 break
             
             action = actions[idx] if idx is not None else "back"
@@ -1164,8 +997,6 @@ class InteractivePromptBuilder:
                 self._test_prompt()
             elif action == "chains":
                 self._prompt_chains_menu()
-            elif action == "share":
-                self._sharing_menu()
             elif action == "analytics":
                 self._show_analytics()
 
@@ -1502,116 +1333,6 @@ class InteractivePromptBuilder:
                 console.print(f"[green]✓ Chain '{name}' created with {len(steps)} steps[/]")
             else:
                 print(f"Chain '{name}' created!")
-
-    def _sharing_menu(self):
-        """Share and import prompt libraries."""
-        while True:
-            if RICH_AVAILABLE:
-                console.print("\n[bold blue]📤 Share & Import[/]\n")
-                table = Table(box=box.ROUNDED, border_style="dim", show_header=False)
-                table.add_column("Key", width=5)
-                table.add_column("Action", width=30)
-                table.add_row("[cyan]e[/]", "📦 [cyan]Export library[/]")
-                table.add_row("[green]i[/]", "📥 [green]Import from code[/]")
-                table.add_row("[yellow]l[/]", "📚 [yellow]List libraries[/]")
-                table.add_row("[red]b[/]", "🔙 [red]Back[/]")
-                console.print(table)
-                choice = Prompt.ask("\n[bold]Select[/]", default="b")
-            else:
-                print("\n📤 Share & Import:\n")
-                print("  [e] Export library")
-                print("  [i] Import from code")
-                print("  [l] List libraries")
-                print("  [b] Back")
-                choice = input("\nSelect: ").strip().lower()
-
-            if choice == "b":
-                break
-            elif choice == "e":
-                self._export_library()
-            elif choice == "i":
-                self._import_library()
-            elif choice == "l":
-                self._list_libraries()
-
-    def _export_library(self):
-        """Export prompts to a shareable library."""
-        prompts = self.history.list_recent(50)
-        if not prompts:
-            if RICH_AVAILABLE:
-                console.print("[dim]No prompts to export[/]")
-            return
-
-        if RICH_AVAILABLE:
-            name = Prompt.ask("[bold]Library name[/]")
-            description = Prompt.ask("[dim]Description[/]", default="")
-        else:
-            name = input("Library name: ").strip()
-            description = input("Description: ").strip()
-
-        shared_prompts = [
-            SharedPrompt(
-                id="",
-                name=p.task[:50],
-                technique=p.technique,
-                prompt=p.prompt,
-                tags=p.tags
-            )
-            for p in prompts[:20]  # Export up to 20
-        ]
-
-        library = self.sharing.create_library(name, description, shared_prompts)
-        path = self.sharing.export_library(library)
-        share_code = self.sharing.generate_share_code(library)
-
-        if RICH_AVAILABLE:
-            console.print(f"\n[green]✓ Exported to {path}[/]")
-            console.print(f"\n[bold]Share code:[/]\n[cyan]{share_code[:100]}...[/]")
-        else:
-            print(f"\nExported to {path}")
-            print(f"Share code: {share_code[:80]}...")
-
-    def _import_library(self):
-        """Import a library from share code."""
-        if RICH_AVAILABLE:
-            code = Prompt.ask("[bold]Paste share code[/]")
-        else:
-            code = input("Paste share code: ").strip()
-
-        try:
-            library = self.sharing.import_from_share_code(code)
-            self.sharing.export_library(library)
-            if RICH_AVAILABLE:
-                console.print(f"[green]✓ Imported '{library.name}' with {len(library.prompts)} prompts[/]")
-            else:
-                print(f"Imported '{library.name}' with {len(library.prompts)} prompts")
-        except Exception as e:
-            if RICH_AVAILABLE:
-                console.print(f"[red]Error: {e}[/]")
-            else:
-                print(f"Error: {e}")
-
-    def _list_libraries(self):
-        """List local libraries."""
-        libraries = self.sharing.list_local_libraries()
-        if not libraries:
-            if RICH_AVAILABLE:
-                console.print("[dim]No libraries found[/]")
-            return
-
-        if RICH_AVAILABLE:
-            table = Table(title="📚 Local Libraries", box=box.ROUNDED)
-            table.add_column("Name")
-            table.add_column("Prompts", justify="right")
-            for name in libraries:
-                lib = self.sharing.load_local_library(name)
-                count = len(lib.prompts) if lib else 0
-                table.add_row(name, str(count))
-            console.print(table)
-        else:
-            print("\nLocal Libraries:")
-            for name in libraries:
-                print(f"  • {name}")
 
     def _show_analytics(self):
         """Show usage analytics."""

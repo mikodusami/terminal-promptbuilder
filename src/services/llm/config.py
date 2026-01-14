@@ -60,7 +60,7 @@ class LLMConfig:
         self.default_model: Optional[str] = None
         self._load_config()
 
-    def _load_config(self):
+    def _load_config(self) -> None:
         """Load API keys from environment and config file."""
         file_config = {}
         if self.config_path.exists():

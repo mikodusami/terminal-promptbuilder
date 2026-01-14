@@ -15,7 +15,7 @@ class HistoryService(BaseStorage):
     def __init__(self, db_path: Optional[str] = None):
         super().__init__("history.db", db_path)
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Initialize the database schema."""
         with self._get_connection() as conn:
             conn.execute("""

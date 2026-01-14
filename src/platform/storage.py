@@ -19,7 +19,7 @@ class BaseStorage:
         self.db_path = db_path
         self._init_db()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """Initialize database schema. Override in subclasses."""
         pass
 

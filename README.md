@@ -48,7 +48,6 @@ A powerful command-line tool for creating exceptional prompts using modern promp
 | **Prompt Optimizer**            | AI analyzes and improves your prompts with scores        |
 | **Multi-Model Testing**         | Test prompts across OpenAI, Anthropic, and Google models |
 | **Prompt Chains**               | Multi-step workflows with output chaining                |
-| **Sharing & Collaboration**     | Export/import prompt libraries with share codes          |
 | **Analytics Dashboard**         | Track usage, costs, and performance                      |
 
 ---
@@ -329,11 +328,9 @@ prompt-builder/
 ├── prompt_optimizer.py  # AI optimization
 ├── prompt_testing.py    # Multi-model testing
 ├── prompt_chains.py     # Workflow chains
-├── prompt_sharing.py    # Library sharing
 ├── context_manager.py   # Context window handling
 ├── analytics.py         # Usage analytics
 ├── natural_language_gen.py  # NL prompt generation
-├── plugin_system.py     # Plugin architecture
 ├── requirements.txt
 └── README.md
 ```
