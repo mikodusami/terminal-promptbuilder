@@ -155,8 +155,9 @@ class DiscoveryEngine:
 
         try:
             # Dynamic import of manifest module
+            # Use full module path so relative imports work correctly
             spec = importlib.util.spec_from_file_location(
-                f"contrib.{path.name}.manifest",
+                f"src.workbench.contrib.{path.name}.manifest",
                 manifest_path
             )
             if spec is None or spec.loader is None:
@@ -168,6 +169,10 @@ class DiscoveryEngine:
                 return None
                 
             module = importlib.util.module_from_spec(spec)
+            # Register in sys.modules so relative imports work
+            import sys
+            module_name = f"src.workbench.contrib.{path.name}.manifest"
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
 
             # Validate required exports
